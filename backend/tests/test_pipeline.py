@@ -1,0 +1,113 @@
+import asyncio
+from dataclasses import replace
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import httpx
+
+import main
+from config import Settings
+from job_store import JobStore
+from models import Job, Page
+from services.obsidian import ObsidianExporter, slugify
+
+
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"demo-image-content"
+
+
+class CoreTests(unittest.TestCase):
+    def test_detect_image_type_uses_magic_bytes(self):
+        self.assertEqual(main.detect_image_type(PNG_BYTES), "image/png")
+        self.assertEqual(main.detect_image_type(b"\xff\xd8\xffdemo"), "image/jpeg")
+        self.assertIsNone(main.detect_image_type(b"not-an-image"))
+
+    def test_slugify_handles_vietnamese_and_windows_names(self):
+        self.assertEqual(slugify("Ghi chú Toán học"), "ghi-chu-toan-hoc")
+        self.assertEqual(slugify("CON"), "ghi-chu")
+
+    def test_demo_mode_does_not_write_to_configured_real_vault(self):
+        with tempfile.TemporaryDirectory() as real_vault:
+            with patch.dict(
+                "os.environ",
+                {"DEMO_MODE": "true", "VAULT_PATH": real_vault, "DEMO_ALLOW_VAULT_WRITE": "false"},
+                clear=False,
+            ):
+                settings = Settings.from_env()
+        self.assertEqual(settings.vault_path.name, "demo-vault")
+
+
+class JobStoreTests(unittest.IsolatedAsyncioTestCase):
+    async def test_late_subscriber_receives_replayed_events(self):
+        store = JobStore()
+        job = Job(
+            id="replay-job",
+            pages=[Page(number=1, filename="page.png", mime_type="image/png", content=PNG_BYTES)],
+        )
+        await store.add(job)
+        await store.emit(job.id, "job.started", total_pages=1)
+        stream = store.stream(job.id)
+        first_event = await anext(stream)
+        payload = json.loads(first_event.split("data: ", 1)[1])
+        self.assertEqual(payload["type"], "job.started")
+        await stream.aclose()
+
+
+class ApiFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_demo_upload_review_and_export(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_exporter = main.obsidian_exporter
+            main.obsidian_exporter = ObsidianExporter(
+                replace(main.settings, vault_path=Path(temp_dir).resolve(), demo_mode=True)
+            )
+            transport = httpx.ASGITransport(app=main.app)
+            try:
+                async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                    response = await client.post(
+                        "/api/jobs",
+                        files=[("files", ("page.png", PNG_BYTES, "image/png"))],
+                    )
+                    self.assertEqual(response.status_code, 202)
+                    job_id = response.json()["job_id"]
+
+                    snapshot = None
+                    for _ in range(80):
+                        snapshot = (await client.get(f"/api/jobs/{job_id}")).json()
+                        if snapshot["status"] in {"ready", "error"}:
+                            break
+                        await asyncio.sleep(0.05)
+
+                    self.assertEqual(snapshot["status"], "ready")
+                    self.assertTrue(snapshot["combined_markdown"])
+                    self.assertTrue(snapshot["metadata"]["topics"])
+
+                    export_response = await client.post(
+                        f"/api/jobs/{job_id}/export",
+                        json={
+                            "markdown": snapshot["combined_markdown"],
+                            "metadata": snapshot["metadata"],
+                        },
+                    )
+                    self.assertEqual(export_response.status_code, 200)
+                    note_path = Path(temp_dir) / export_response.json()["note_path"]
+                    self.assertTrue(note_path.exists())
+                    note_text = note_path.read_text(encoding="utf-8")
+                    self.assertIn("[[OmniScribe/Topics/", note_text)
+                    self.assertIn("page-01.png", note_text)
+            finally:
+                main.obsidian_exporter = original_exporter
+
+    async def test_invalid_upload_is_rejected(self):
+        transport = httpx.ASGITransport(app=main.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/jobs",
+                files=[("files", ("fake.png", b"not-an-image", "image/png"))],
+            )
+        self.assertEqual(response.status_code, 415)
+
+
+if __name__ == "__main__":
+    unittest.main()

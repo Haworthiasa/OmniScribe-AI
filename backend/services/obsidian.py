@@ -1,0 +1,115 @@
+from datetime import datetime, timezone
+import os
+from pathlib import Path
+import re
+import unicodedata
+from urllib.parse import quote
+
+import yaml
+
+from config import Settings
+from models import DocumentMetadata, Page
+
+
+WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+
+
+def slugify(value: str, fallback: str = "ghi-chu") -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii").lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-._ ")
+    if not slug or slug in WINDOWS_RESERVED:
+        return fallback
+    return slug[:100]
+
+
+def _safe_topic(value: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*]', "-", value).strip(" .")
+    return cleaned[:100] or "Chủ đề"
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(content, encoding="utf-8")
+    os.replace(temp_path, path)
+
+
+class ObsidianExporter:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def export(
+        self,
+        job_id: str,
+        pages: list[Page],
+        markdown: str,
+        metadata: DocumentMetadata,
+    ) -> dict[str, str | bool]:
+        root = self.settings.vault_path
+        inbox = root / "OmniScribe" / "Inbox"
+        attachments = root / "OmniScribe" / "Attachments" / job_id
+        topics_dir = root / "OmniScribe" / "Topics"
+        for directory in (inbox, attachments, topics_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now(timezone.utc)
+        base_name = f"{timestamp:%Y-%m-%d}-{slugify(metadata.title)}"
+        note_path = self._unique_path(inbox / f"{base_name}.md")
+
+        attachment_links: list[str] = []
+        for page in pages:
+            extension = ".png" if page.mime_type == "image/png" else ".jpg"
+            image_path = attachments / f"page-{page.number:02d}{extension}"
+            image_path.write_bytes(page.content)
+            relative_image = image_path.relative_to(root).as_posix()
+            attachment_links.append(f"![[{relative_image}]]")
+
+        topic_links: list[str] = []
+        for topic in metadata.topics:
+            topic_name = _safe_topic(topic)
+            topic_path = topics_dir / f"{topic_name}.md"
+            if not topic_path.exists():
+                topic_frontmatter = yaml.safe_dump({"type": "topic", "topic": topic_name}, allow_unicode=True, sort_keys=False).strip()
+                _atomic_write(topic_path, f"---\n{topic_frontmatter}\n---\n\n# {topic_name}\n")
+            topic_links.append(f"[[OmniScribe/Topics/{topic_name}|{topic_name}]]")
+
+        frontmatter = {
+            "title": metadata.title,
+            "created": timestamp.isoformat(),
+            "source": "handwritten",
+            "document_type": metadata.document_type,
+            "category": metadata.category,
+            "tags": metadata.tags,
+            "status": "reviewed",
+            "pages": len(pages),
+        }
+        yaml_text = yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False).strip()
+        topics_text = "\n".join(f"- {link}" for link in topic_links) or "- Chưa phân loại"
+        sources_text = "\n\n".join(attachment_links)
+        note_content = (
+            f"---\n{yaml_text}\n---\n\n"
+            f"# {metadata.title}\n\n> {metadata.summary}\n\n"
+            f"## Nội dung\n\n{markdown.strip()}\n\n"
+            f"## Chủ đề liên quan\n\n{topics_text}\n\n"
+            f"## Nguồn\n\n{sources_text}\n"
+        )
+        _atomic_write(note_path, note_content)
+
+        relative_note = note_path.relative_to(root).as_posix()
+        vault_name = root.name
+        open_uri = f"obsidian://open?vault={quote(vault_name)}&file={quote(relative_note)}"
+        return {
+            "note_path": relative_note,
+            "open_uri": open_uri,
+            "demo_vault": self.settings.vault_path.name == "demo-vault",
+        }
+
+    @staticmethod
+    def _unique_path(path: Path) -> Path:
+        if not path.exists():
+            return path
+        for suffix in range(2, 1000):
+            candidate = path.with_stem(f"{path.stem}-{suffix}")
+            if not candidate.exists():
+                return candidate
+        raise RuntimeError("Could not create a unique note filename")
