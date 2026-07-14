@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import { stripPageMarkers } from '../lib/workbench'
 
 class MarkdownBoundary extends Component {
   constructor(props) {
@@ -23,8 +24,9 @@ class MarkdownBoundary extends Component {
 }
 
 export default function MarkdownRenderer({ markdown }) {
+  const visibleMarkdown = stripPageMarkers(markdown)
   return (
-    <MarkdownBoundary markdown={markdown}>
+    <MarkdownBoundary markdown={visibleMarkdown}>
       <article className="markdown-content">
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
@@ -34,10 +36,9 @@ export default function MarkdownRenderer({ markdown }) {
             table: ({ children }) => <div className="table-scroll"><table>{children}</table></div>,
           }}
         >
-          {markdown}
+          {visibleMarkdown}
         </ReactMarkdown>
       </article>
     </MarkdownBoundary>
   )
 }
-

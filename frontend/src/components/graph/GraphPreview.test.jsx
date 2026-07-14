@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { StrictMode } from 'react'
 import { describe, expect, test, vi } from 'vitest'
 import { buildMetadataGraph } from '../../lib/graphModel'
 import GraphPreview from './GraphPreview'
@@ -36,5 +37,17 @@ describe('GraphPreview', () => {
     fireEvent(dialog, new Event('cancel', { cancelable: true }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(open).toHaveFocus())
+  })
+
+  test('dialog vẫn mở khi component chạy trong React StrictMode', async () => {
+    render(
+      <StrictMode>
+        <GraphPreview graph={graph} loading={false} depth={1} includeTags onDepthChange={() => {}} onTagsChange={() => {}} />
+      </StrictMode>,
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Mở graph' }))
+
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
   })
 })

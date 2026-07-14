@@ -39,6 +39,40 @@ class MarkdownParsingTests(unittest.TestCase):
 
 
 class VaultIndexTests(unittest.TestCase):
+    def test_omniscribe_directory_can_be_the_vault_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            vault = Path(temp) / "OmniScribe"
+            inbox = vault / "Inbox"
+            inbox.mkdir(parents=True)
+            note_path = inbox / "A.md"
+            note_path.write_text("---\ncategory: Test\n---\n# A", encoding="utf-8")
+            attachments = vault / "Attachments"
+            attachments.mkdir()
+            (attachments / "ignored.md").write_text("# Attachment", encoding="utf-8")
+            nested = vault / "OmniScribe" / "Inbox"
+            nested.mkdir(parents=True)
+            (nested / "ignored.md").write_text("# Nested artifact", encoding="utf-8")
+
+            service = VaultGraphService(settings_for(vault))
+            notes, available, warnings = service.refresh()
+
+            self.assertTrue(available)
+            self.assertEqual(warnings, [])
+            self.assertIn("Inbox/A.md", notes)
+            self.assertNotIn("Attachments/ignored.md", notes)
+            self.assertNotIn("OmniScribe/Inbox/ignored.md", notes)
+            graph = service.build(
+                "job",
+                "[[A]]",
+                DocumentMetadata(title="Current", category="Test"),
+                depth=1,
+                include_tags=False,
+                current_path="Inbox/A.md",
+            )
+            current = next(node for node in graph["nodes"] if node["current"])
+            self.assertEqual(current["path"], "Inbox/A.md")
+            self.assertIn("file=Inbox%2FA.md", current["open_uri"])
+
     def test_cache_add_update_delete_and_neighborhood(self):
         with tempfile.TemporaryDirectory() as temp:
             vault = Path(temp)
@@ -93,6 +127,36 @@ class VaultIndexTests(unittest.TestCase):
 
 
 class ExportAndMigrationTests(unittest.TestCase):
+    def test_export_and_migration_when_omniscribe_is_vault_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            vault = Path(temp) / "OmniScribe"
+            vault.mkdir()
+            exporter = ObsidianExporter(settings_for(vault))
+
+            result = exporter.export(
+                "job",
+                [Page(1, "a.png", "image/png", b"png")],
+                "Nội dung",
+                DocumentMetadata(title="Demo", category="Học tập", topics=["Vật lý"]),
+            )
+
+            self.assertTrue(result["note_path"].startswith("Inbox/"))
+            self.assertFalse((vault / "OmniScribe").exists())
+            note_path = vault / result["note_path"]
+            note = note_path.read_text(encoding="utf-8")
+            self.assertIn("[[Categories/Học tập|Học tập]]", note)
+            self.assertIn("[[Topics/Vật lý|Vật lý]]", note)
+            self.assertIn("file=Inbox%2F", result["open_uri"])
+
+            legacy = vault / "Inbox" / "legacy.md"
+            legacy.write_text("---\nsource: handwritten\ncategory: Khác\n---\n# Cũ\n", encoding="utf-8")
+            dry = migrate(vault, apply=False, timestamp="direct")
+            self.assertEqual(dry["changed"], ["Inbox/legacy.md"])
+            migrate(vault, apply=True, timestamp="direct")
+            self.assertTrue((vault / "Categories" / "Học tập.md").is_file())
+            self.assertTrue((vault / "Categories" / "Khác.md").is_file())
+            self.assertTrue((vault / ".omniscribe-backups" / "direct" / "Inbox" / "legacy.md").is_file())
+
     def test_export_creates_category_note_and_link_without_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
             vault = Path(temp)
@@ -110,6 +174,19 @@ class ExportAndMigrationTests(unittest.TestCase):
             self.assertIn("## Danh mục", note)
             self.assertIn("[[OmniScribe/Categories/Học tập|Học tập]]", note)
             self.assertEqual(category.read_text(encoding="utf-8"), "Nội dung riêng")
+            self.assertIn("file=OmniScribe%2FInbox%2F", result["open_uri"])
+            self.assertNotIn("file=OmniScribe/Inbox/", result["open_uri"])
+
+            graph = VaultGraphService(settings_for(vault)).build(
+                "job",
+                "[[OmniScribe/Inbox/linked]]",
+                DocumentMetadata(title="Demo", category="Học tập"),
+                depth=1,
+                include_tags=True,
+                current_path=result["note_path"],
+            )
+            current = next(node for node in graph["nodes"] if node["current"])
+            self.assertIn("file=OmniScribe%2FInbox%2F", current["open_uri"])
 
     def test_migration_dry_run_apply_backup_and_idempotence(self):
         with tempfile.TemporaryDirectory() as temp:

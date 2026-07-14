@@ -4,13 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 import re
 import threading
-from urllib.parse import quote
 
 import yaml
 
 from config import Settings
 from models import DocumentMetadata
-from services.obsidian import _safe_topic, slugify
+from services.obsidian import _safe_topic, obsidian_open_uri, omniscribe_content_root, omniscribe_relative_path, slugify
 
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]")
@@ -69,7 +68,12 @@ class VaultGraphService:
             if relative.is_absolute() or ".." in relative.parts:
                 warnings.append(f"Bỏ qua graph root không hợp lệ: {configured}")
                 continue
-            candidate = root if configured == "." else root.joinpath(*relative.parts)
+            if configured == ".":
+                candidate = root
+            elif configured.casefold() == "omniscribe" and omniscribe_content_root(root) == root:
+                candidate = root
+            else:
+                candidate = root.joinpath(*relative.parts)
             try:
                 resolved = candidate.resolve()
                 resolved.relative_to(resolved_root)
@@ -92,6 +96,9 @@ class VaultGraphService:
             self._cache.clear()
             return {}, False, warnings
         vault = self.settings.vault_path.resolve()
+        content_root = omniscribe_content_root(vault).resolve()
+        attachments_root = content_root / "Attachments"
+        direct_layout = content_root == vault
         found: set[str] = set()
         for graph_root in roots:
             for path in graph_root.rglob("*.md"):
@@ -99,8 +106,12 @@ class VaultGraphService:
                     if path.is_symlink() or ".obsidian" in path.parts:
                         continue
                     resolved = path.resolve()
-                    resolved.relative_to(vault)
-                    relative = resolved.relative_to(vault).as_posix()
+                    relative_path = resolved.relative_to(vault)
+                    if attachments_root in resolved.parents:
+                        continue
+                    if direct_layout and relative_path.parts and relative_path.parts[0].casefold() == "omniscribe":
+                        continue
+                    relative = relative_path.as_posix()
                     stat = resolved.stat()
                     signature = (stat.st_mtime_ns, stat.st_size)
                     found.add(relative)
@@ -129,7 +140,8 @@ class VaultGraphService:
         center_id = f"category:{slugify(category_label, 'chua-phan-loai')}"
         current_note = notes.get(current_path or "")
         current_id = f"note:{current_note.path}" if current_note else f"current:{job_id}"
-        category_note = self._lookup(notes, f"OmniScribe/Categories/{_safe_topic(category_label)}")
+        category_target = omniscribe_relative_path(self.settings.vault_path, "Categories", _safe_topic(category_label))
+        category_note = self._lookup(notes, category_target)
         nodes: dict[str, dict] = {
             center_id: {"id": center_id, "label": category_label, "type": "category", "exists": bool(category_note), "current": False, **({"path": category_note.path} if category_note else {})},
             current_id: {"id": current_id, "label": metadata.title, "type": "document", "exists": bool(current_note), "current": True},
@@ -165,7 +177,8 @@ class VaultGraphService:
                 priority[note_id] = min(priority.get(note_id, 10 + index), 10 + index)
                 add_edge(current_id, note_id, "wikilink")
         for index, topic in enumerate(metadata.topics):
-            note = self._lookup(notes, f"OmniScribe/Topics/{topic}") or self._lookup(notes, topic)
+            topic_target = omniscribe_relative_path(self.settings.vault_path, "Topics", topic)
+            note = self._lookup(notes, topic_target) or self._lookup(notes, topic)
             if note:
                 note_id = add_note(note)
                 priority[note_id] = min(priority.get(note_id, 15 + index), 15 + index)
@@ -209,6 +222,6 @@ class VaultGraphService:
                 continue
             node = {**nodes[node_id], "degree": degrees[node_id]}
             if node.get("path"):
-                node["open_uri"] = f"obsidian://open?vault={quote(vault_name)}&file={quote(node['path'])}"
+                node["open_uri"] = obsidian_open_uri(vault_name, node["path"])
             final_nodes.append(node)
         return {"center_id": center_id, "nodes": final_nodes, "edges": final_edges, "truncated": truncated, "vault_available": available, "warnings": list(dict.fromkeys(warnings))}

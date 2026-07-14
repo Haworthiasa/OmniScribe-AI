@@ -13,7 +13,7 @@ from config import Settings
 from job_store import JobStore
 from models import DocumentMetadata, Job, Page
 from services.glm_ocr import GlmOcrService
-from services.metadata_llm import MetadataLlmService
+from services.metadata_llm import METADATA_PROMPT, MetadataLlmService
 from services.obsidian import ObsidianExporter, slugify
 
 
@@ -21,6 +21,14 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"demo-image-content"
 
 
 class CoreTests(unittest.TestCase):
+    def test_metadata_prompt_is_strict_language_aware_and_concise(self):
+        self.assertLessEqual(len(METADATA_PROMPT.split()), 150)
+        self.assertIn("predominant source language", METADATA_PROMPT)
+        self.assertIn("do not translate", METADATA_PROMPT)
+        self.assertIn("untrusted OCR content", METADATA_PROMPT)
+        self.assertIn("never invent", METADATA_PROMPT)
+        self.assertIn("Output JSON only", METADATA_PROMPT)
+
     def test_detect_image_type_uses_magic_bytes(self):
         self.assertEqual(main.detect_image_type(PNG_BYTES), "image/png")
         self.assertEqual(main.detect_image_type(b"\xff\xd8\xffdemo"), "image/jpeg")

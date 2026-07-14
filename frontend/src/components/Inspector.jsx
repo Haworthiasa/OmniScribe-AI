@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { buildMetadataGraph } from '../lib/graphModel'
 import { EMPTY_METADATA, limitPrimaryTags } from '../lib/workbench'
+import { useI18n } from '../lib/i18n'
 import { Panel } from './WorkbenchShell'
 
 const GraphPreview = lazy(() => import('./graph/GraphPreview'))
@@ -24,6 +25,7 @@ function preference(key, fallback) {
 }
 
 export function KnowledgeGraph({ jobId, markdown, metadata, ready }) {
+  const { t } = useI18n()
   const [depth, setDepthState] = useState(() => preference('omniscribe.graph.depth', 1))
   const [includeTags, setIncludeTagsState] = useState(() => preference('omniscribe.graph.tags', true))
   const [graph, setGraph] = useState(() => buildMetadataGraph(ready ? metadata : {}))
@@ -58,7 +60,7 @@ export function KnowledgeGraph({ jobId, markdown, metadata, ready }) {
           body: JSON.stringify({ markdown, metadata, depth, include_tags: includeTags }),
         })
         const result = await response.json().catch(() => ({}))
-        if (!response.ok) throw new Error(result.detail || 'Không thể đọc graph trong vault.')
+        if (!response.ok) throw new Error(result.detail || t('graph.readFailed'))
         if (currentRequest === requestId.current) setGraph(result)
       } catch (error) {
         if (error.name !== 'AbortError' && currentRequest === requestId.current) {
@@ -72,19 +74,19 @@ export function KnowledgeGraph({ jobId, markdown, metadata, ready }) {
       clearTimeout(timeout)
       controller.abort()
     }
-  }, [depth, includeTags, jobId, markdown, metadata, ready])
+  }, [depth, includeTags, jobId, markdown, metadata, ready, t])
 
   if (!graph.nodes.length) {
     return (
       <div className="graph-empty">
         <span aria-hidden="true">◇—◇</span>
-        <strong>Chưa có dữ liệu liên kết</strong>
-        <p>Graph sẽ lấy danh mục làm trọng tâm, rồi kết nối tài liệu với notes, chủ đề và tối đa 3 tags.</p>
+        <strong>{t('graph.empty')}</strong>
+        <p>{t('graph.emptyHelp')}</p>
       </div>
     )
   }
   return (
-    <Suspense fallback={<div className="graph-loading" role="status">Đang nạp graph engine…</div>}>
+    <Suspense fallback={<div className="graph-loading" role="status">{t('graph.loading')}</div>}>
       <GraphPreview
         graph={graph}
         loading={loading}
@@ -107,39 +109,40 @@ export default function Inspector({
   saving = false,
   exportResult,
 }) {
+  const { t } = useI18n()
   return (
     <>
-      <Panel code="B1" title="Metadata" note={ready ? 'Có thể sửa' : 'Chờ document.ready'} className="metadata-panel">
+      <Panel code="B1" title="Metadata" note={ready ? t('inspector.editable') : t('inspector.waitReady')} className="metadata-panel">
         <fieldset disabled={!ready} className={!ready ? 'metadata-fields is-disabled' : 'metadata-fields'}>
-          <legend className="visually-hidden">Metadata tài liệu</legend>
-          <label>Tiêu đề<input value={metadata.title} onChange={(event) => onChange('title', event.target.value)} placeholder="Chưa có tiêu đề" /></label>
-          <label>Tóm tắt<textarea rows="3" value={metadata.summary} onChange={(event) => onChange('summary', event.target.value)} placeholder="Chưa có tóm tắt" /></label>
+          <legend className="visually-hidden">{t('inspector.documentMetadata')}</legend>
+          <label>{t('inspector.title')}<input value={metadata.title} onChange={(event) => onChange('title', event.target.value)} placeholder={t('inspector.noTitle')} /></label>
+          <label>{t('inspector.summary')}<textarea rows="3" value={metadata.summary} onChange={(event) => onChange('summary', event.target.value)} placeholder={t('inspector.noSummary')} /></label>
           <div className="field-pair">
-            <label>Loại<input value={metadata.document_type} onChange={(event) => onChange('document_type', event.target.value)} /></label>
-            <label>Danh mục<input value={metadata.category} onChange={(event) => onChange('category', event.target.value)} placeholder="Chưa phân loại" /></label>
+            <label>{t('inspector.type')}<input value={metadata.document_type} onChange={(event) => onChange('document_type', event.target.value)} /></label>
+            <label>{t('inspector.category')}<input value={metadata.category} onChange={(event) => onChange('category', event.target.value)} placeholder={t('inspector.uncategorized')} /></label>
           </div>
-          <label>Tags<input value={listValue(metadata.tags)} onChange={(event) => onChange('tags', limitPrimaryTags(parseList(event.target.value)))} placeholder="ôn-tập, vật-lý, ghi-chú" /><small className="field-hint">Tối đa 3 tags chủ đạo.</small></label>
-          <label>Chủ đề<input value={listValue(metadata.topics)} onChange={(event) => onChange('topics', parseList(event.target.value))} placeholder="Vật lý, Năng lượng" /></label>
+          <label>Tags<input value={listValue(metadata.tags)} onChange={(event) => onChange('tags', limitPrimaryTags(parseList(event.target.value)))} placeholder={t('inspector.tagsPlaceholder')} /><small className="field-hint">{t('inspector.tagsHint')}</small></label>
+          <label>{t('inspector.topics')}<input value={listValue(metadata.topics)} onChange={(event) => onChange('topics', parseList(event.target.value))} placeholder={t('inspector.topicsPlaceholder')} /></label>
         </fieldset>
       </Panel>
 
-      <Panel code="B2" title="Graph preview" note="Local graph" className="graph-panel">
+      <Panel code="B2" title={t('inspector.graphPreview')} note={t('inspector.localGraph')} className="graph-panel">
         <KnowledgeGraph jobId={jobId} markdown={markdown} metadata={metadata} ready={ready} />
       </Panel>
 
-      <Panel code="B3" title="Obsidian" note={exportResult ? 'Đã lưu' : 'Xuất bản ghi'} className="save-panel">
+      <Panel code="B3" title="Obsidian" note={exportResult ? t('inspector.saved') : t('inspector.publish')} className="save-panel">
         {exportResult ? (
           <div className="export-result" role="status">
             <span aria-hidden="true">✓</span>
-            <div><strong>Đã lưu vào vault</strong><small>{exportResult.note_path}</small></div>
-            {exportResult.open_uri && <a className="machine-button primary" href={exportResult.open_uri}>Mở trong Obsidian</a>}
-            {exportResult.demo_vault && <p>Đây là demo vault trong thư mục backend.</p>}
+            <div><strong>{t('inspector.savedVault')}</strong><small>{exportResult.note_path}</small></div>
+            {exportResult.open_uri && <a className="machine-button primary" href={exportResult.open_uri}>{t('inspector.openObsidian')}</a>}
+            {exportResult.demo_vault && <p>{t('inspector.demoVault')}</p>}
           </div>
         ) : (
           <>
-            <p className="save-copy">Kiểm tra Markdown và metadata trước khi ghi bản note cùng ảnh nguồn vào vault.</p>
+            <p className="save-copy">{t('inspector.saveHelp')}</p>
             <button className="machine-button primary" type="button" onClick={onSave} disabled={!ready || saving || !metadata.title.trim()}>
-              {saving ? 'Đang lưu…' : 'Lưu vào Obsidian'}
+              {saving ? t('inspector.saving') : t('inspector.save')}
             </button>
           </>
         )}

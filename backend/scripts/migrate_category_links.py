@@ -12,12 +12,13 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from services.obsidian import _atomic_write, _safe_topic, ensure_category_note  # noqa: E402
+from services.obsidian import _atomic_write, _safe_topic, ensure_category_note, omniscribe_content_root  # noqa: E402
 
 
-def add_category_section(text: str, category: str) -> str:
+def add_category_section(text: str, category: str, category_target: str | None = None) -> str:
     category_name = _safe_topic(category)
-    link = f"[[OmniScribe/Categories/{category_name}|{category}]]"
+    target = category_target or f"OmniScribe/Categories/{category_name}"
+    link = f"[[{target}|{category}]]"
     if link in text or "## Danh mục" in text:
         return text
     return f"{text.rstrip()}\n\n## Danh mục\n\n{link}\n"
@@ -35,9 +36,10 @@ def frontmatter(text: str) -> dict:
 
 def migrate(vault: Path, apply: bool = False, timestamp: str | None = None) -> dict[str, object]:
     vault = vault.resolve()
-    inbox = vault / "OmniScribe" / "Inbox"
+    content_root = omniscribe_content_root(vault)
+    inbox = content_root / "Inbox"
     stamp = timestamp or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    backup_root = vault / "OmniScribe" / ".omniscribe-backups" / stamp
+    backup_root = content_root / ".omniscribe-backups" / stamp
     changed: list[str] = []
     categories: set[str] = set()
     if not inbox.is_dir():
@@ -52,7 +54,8 @@ def migrate(vault: Path, apply: bool = False, timestamp: str | None = None) -> d
             continue
         category = category.strip()
         categories.add(category)
-        updated = add_category_section(text, category)
+        category_target = (content_root / "Categories" / _safe_topic(category)).relative_to(vault).as_posix()
+        updated = add_category_section(text, category, category_target)
         if updated == text:
             continue
         relative = path.relative_to(vault).as_posix()

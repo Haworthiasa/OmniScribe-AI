@@ -14,6 +14,20 @@ from models import DocumentMetadata, Page
 WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
 
 
+def obsidian_open_uri(vault_name: str, relative_note: str) -> str:
+    return f"obsidian://open?vault={quote(vault_name, safe='')}&file={quote(relative_note, safe='')}"
+
+
+def omniscribe_content_root(vault_root: Path) -> Path:
+    if vault_root.name.casefold() == "omniscribe":
+        return vault_root
+    return vault_root / "OmniScribe"
+
+
+def omniscribe_relative_path(vault_root: Path, *parts: str) -> str:
+    return omniscribe_content_root(vault_root).joinpath(*parts).relative_to(vault_root).as_posix()
+
+
 def slugify(value: str, fallback: str = "ghi-chu") -> str:
     normalized = unicodedata.normalize("NFKD", value)
     ascii_text = normalized.encode("ascii", "ignore").decode("ascii").lower()
@@ -30,7 +44,7 @@ def _safe_topic(value: str) -> str:
 
 def ensure_category_note(root: Path, category: str) -> tuple[Path, str]:
     category_name = _safe_topic(category or "Chưa phân loại")
-    category_path = root / "OmniScribe" / "Categories" / f"{category_name}.md"
+    category_path = omniscribe_content_root(root) / "Categories" / f"{category_name}.md"
     category_path.parent.mkdir(parents=True, exist_ok=True)
     if not category_path.exists():
         frontmatter = yaml.safe_dump(
@@ -60,14 +74,16 @@ class ObsidianExporter:
         metadata: DocumentMetadata,
     ) -> dict[str, str | bool]:
         root = self.settings.vault_path
-        inbox = root / "OmniScribe" / "Inbox"
-        attachments = root / "OmniScribe" / "Attachments" / job_id
-        topics_dir = root / "OmniScribe" / "Topics"
-        categories_dir = root / "OmniScribe" / "Categories"
+        content_root = omniscribe_content_root(root)
+        inbox = content_root / "Inbox"
+        attachments = content_root / "Attachments" / job_id
+        topics_dir = content_root / "Topics"
+        categories_dir = content_root / "Categories"
         for directory in (inbox, attachments, topics_dir, categories_dir):
             directory.mkdir(parents=True, exist_ok=True)
 
-        _, category_name = ensure_category_note(root, metadata.category)
+        category_path, category_name = ensure_category_note(root, metadata.category)
+        category_target = category_path.relative_to(root).with_suffix("").as_posix()
 
         timestamp = datetime.now(timezone.utc)
         base_name = f"{timestamp:%Y-%m-%d}-{slugify(metadata.title)}"
@@ -88,7 +104,8 @@ class ObsidianExporter:
             if not topic_path.exists():
                 topic_frontmatter = yaml.safe_dump({"type": "topic", "topic": topic_name}, allow_unicode=True, sort_keys=False).strip()
                 _atomic_write(topic_path, f"---\n{topic_frontmatter}\n---\n\n# {topic_name}\n")
-            topic_links.append(f"[[OmniScribe/Topics/{topic_name}|{topic_name}]]")
+            topic_target = topic_path.relative_to(root).with_suffix("").as_posix()
+            topic_links.append(f"[[{topic_target}|{topic_name}]]")
 
         frontmatter = {
             "title": metadata.title,
@@ -108,14 +125,14 @@ class ObsidianExporter:
             f"# {metadata.title}\n\n> {metadata.summary}\n\n"
             f"## Nội dung\n\n{markdown.strip()}\n\n"
             f"## Chủ đề liên quan\n\n{topics_text}\n\n"
-            f"## Danh mục\n\n[[OmniScribe/Categories/{category_name}|{metadata.category}]]\n\n"
+            f"## Danh mục\n\n[[{category_target}|{metadata.category}]]\n\n"
             f"## Nguồn\n\n{sources_text}\n"
         )
         _atomic_write(note_path, note_content)
 
         relative_note = note_path.relative_to(root).as_posix()
         vault_name = root.name
-        open_uri = f"obsidian://open?vault={quote(vault_name)}&file={quote(relative_note)}"
+        open_uri = obsidian_open_uri(vault_name, relative_note)
         return {
             "note_path": relative_note,
             "open_uri": open_uri,

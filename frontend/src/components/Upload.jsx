@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import Inspector from './Inspector'
 import WorkbenchShell, { Panel, Pipeline, StatusLamp } from './WorkbenchShell'
 import { EMPTY_METADATA } from '../lib/workbench'
+import { useI18n } from '../lib/i18n'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 const MAX_FILES = 8
@@ -22,6 +23,7 @@ function makeFileItem(file) {
 }
 
 export default function Upload() {
+  const { t } = useI18n()
   const [items, setItems] = useState([])
   const [health, setHealth] = useState(null)
   const [error, setError] = useState('')
@@ -45,10 +47,10 @@ export default function Upload() {
   function addFiles(fileList) {
     const incoming = Array.from(fileList)
     const invalid = incoming.find((file) => !isAcceptedImage(file))
-    if (invalid) return setError(`${invalid.name} không phải ảnh JPG hoặc PNG.`)
+    if (invalid) return setError(t('upload.invalidImage', { name: invalid.name }))
     const tooLarge = incoming.find((file) => file.size > MAX_BYTES)
-    if (tooLarge) return setError(`${tooLarge.name} vượt quá giới hạn 10 MB.`)
-    if (items.length + incoming.length > MAX_FILES) return setError(`Mỗi lần chỉ xử lý tối đa ${MAX_FILES} ảnh.`)
+    if (tooLarge) return setError(t('upload.tooLarge', { name: tooLarge.name }))
+    if (items.length + incoming.length > MAX_FILES) return setError(t('upload.tooMany', { max: MAX_FILES }))
     setItems((current) => [...current, ...incoming.map(makeFileItem)])
     setError('')
     if (inputRef.current) inputRef.current.value = ''
@@ -96,7 +98,7 @@ export default function Upload() {
     try {
       const response = await fetch(`${API_BASE}/api/jobs`, { method: 'POST', body: formData })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(data.detail || 'Không thể bắt đầu số hóa.')
+      if (!response.ok) throw new Error(data.detail || t('upload.startFailed'))
       navigate(`/jobs/${data.job_id}`)
     } catch (requestError) {
       setError(requestError.message)
@@ -106,9 +108,9 @@ export default function Upload() {
 
   const left = (
     <>
-      <Panel code="A1" title="Nguồn tài liệu" note={`${items.length}/${MAX_FILES} ảnh`}>
-        {health?.demo_mode && <div className="machine-notice warning" role="status"><strong>Demo mode</strong><span>OCR dùng dữ liệu mô phỏng.</span></div>}
-        {health?.offline && <div className="machine-notice danger" role="alert"><strong>Backend offline</strong><span>Chạy FastAPI tại cổng 8000 rồi thử lại.</span></div>}
+      <Panel code="A1" title={t('upload.source')} note={t('upload.imageCount', { count: items.length, max: MAX_FILES })}>
+        {health?.demo_mode && <div className="machine-notice warning" role="status"><strong>{t('shell.demoMode')}</strong><span>{t('upload.demoHelp')}</span></div>}
+        {health?.offline && <div className="machine-notice danger" role="alert"><strong>{t('shell.backendOffline')}</strong><span>{t('upload.offlineHelp')}</span></div>}
         <div
           className="compact-dropzone"
           onDragOver={(event) => event.preventDefault()}
@@ -116,14 +118,14 @@ export default function Upload() {
         >
           <input ref={inputRef} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png" onChange={(event) => addFiles(event.target.files)} />
           <span className="registration-mark" aria-hidden="true">⌜ + ⌟</span>
-          <strong>{items.length ? 'Thêm trang nguồn' : 'Đưa ảnh vào bàn kiểm bản'}</strong>
-          <small>JPG/PNG · tối đa 8 ảnh · 10 MB/ảnh</small>
-          <button className="machine-button secondary" type="button" onClick={() => inputRef.current?.click()}>Chọn ảnh</button>
+          <strong>{items.length ? t('upload.addPages') : t('upload.dropImages')}</strong>
+          <small>{t('upload.limits')}</small>
+          <button className="machine-button secondary" type="button" onClick={() => inputRef.current?.click()}>{t('upload.choose')}</button>
         </div>
-        {error && <div className="machine-notice danger" role="alert"><strong>Không thể thêm ảnh</strong><span>{error}</span></div>}
+        {error && <div className="machine-notice danger" role="alert"><strong>{t('upload.cannotAdd')}</strong><span>{error}</span></div>}
       </Panel>
 
-      <Panel code="A2" title="Hàng đợi trang" note={items.length ? 'Kéo hoặc dùng nút mũi tên' : 'Trống'} className="queue-machine-panel">
+      <Panel code="A2" title={t('upload.queue')} note={items.length ? t('upload.reorder') : t('upload.empty')} className="queue-machine-panel">
         {items.length ? (
           <ol className="upload-queue">
             {items.map((item, index) => (
@@ -137,41 +139,41 @@ export default function Upload() {
                 onDrop={() => dropOn(item.id)}
               >
                 <span className="folio">{String(index + 1).padStart(2, '0')}</span>
-                <img src={item.preview} alt={`Xem trước trang ${index + 1}: ${item.file.name}`} />
-                <span className="queue-copy" title={item.file.name}><strong>{item.file.name}</strong><small>{(item.file.size / 1024 / 1024).toFixed(1)} MB · Chờ tải</small></span>
+                <img src={item.preview} alt={t('upload.imagePreview', { page: index + 1, name: item.file.name })} />
+                <span className="queue-copy" title={item.file.name}><strong>{item.file.name}</strong><small>{(item.file.size / 1024 / 1024).toFixed(1)} MB · {t('upload.waitUpload')}</small></span>
                 <span className="queue-actions">
-                  <button className="icon-button" type="button" onClick={() => moveItem(item.id, -1)} disabled={index === 0} aria-label={`Đưa ${item.file.name} lên`}>↑</button>
-                  <button className="icon-button" type="button" onClick={() => moveItem(item.id, 1)} disabled={index === items.length - 1} aria-label={`Đưa ${item.file.name} xuống`}>↓</button>
-                  <button className="icon-button danger" type="button" onClick={() => removeItem(item.id)} aria-label={`Xóa ${item.file.name}`}>×</button>
+                  <button className="icon-button" type="button" onClick={() => moveItem(item.id, -1)} disabled={index === 0} aria-label={t('upload.moveUp', { name: item.file.name })}>↑</button>
+                  <button className="icon-button" type="button" onClick={() => moveItem(item.id, 1)} disabled={index === items.length - 1} aria-label={t('upload.moveDown', { name: item.file.name })}>↓</button>
+                  <button className="icon-button danger" type="button" onClick={() => removeItem(item.id)} aria-label={t('upload.remove', { name: item.file.name })}>×</button>
                 </span>
               </li>
             ))}
           </ol>
-        ) : <div className="queue-empty"><span>00</span><p>Trang được chọn sẽ xuất hiện ở đây theo đúng thứ tự ghép Markdown.</p></div>}
+        ) : <div className="queue-empty"><span>00</span><p>{t('upload.queueHelp')}</p></div>}
         <button className="machine-button primary" type="button" onClick={startDigitizing} disabled={!items.length || uploading || health?.offline}>
-          {uploading ? 'Đang tải ảnh…' : `Bắt đầu số hóa${items.length ? ` · ${items.length} trang` : ''}`}
+          {uploading ? t('upload.uploading') : `${t('upload.start')}${items.length ? t('upload.pageSuffix', { count: items.length }) : ''}`}
         </button>
       </Panel>
 
-      <Panel code="A3" title="Pipeline" note="5 bước"><Pipeline phase="upload" /></Panel>
+      <Panel code="A3" title="Pipeline" note={t('common.fiveSteps')}><Pipeline phase="upload" /></Panel>
     </>
   )
 
   const center = (
-    <Panel code="M1" title="OCR Markdown trực tiếp" note="Chờ trang nguồn" className="console-panel">
-      <div className="console-toolbar" role="toolbar" aria-label="Chế độ xem tài liệu">
-        <button className="active" type="button">Markdown</button>
-        <button type="button" disabled>Ảnh gốc</button>
-        <button type="button" disabled>Xem trước</button>
-        <button type="button" disabled>Chỉnh sửa</button>
-        <button className="inspector-trigger" type="button" onClick={() => setInspectorOpen(true)}>Metadata</button>
+    <Panel code="M1" title={t('upload.liveOcr')} note={t('upload.waitingSource')} className="console-panel">
+      <div className="console-toolbar" role="toolbar" aria-label={t('upload.viewMode')}>
+        <button className="active" type="button">{t('common.markdown')}</button>
+        <button type="button" disabled>{t('common.sourceImage')}</button>
+        <button type="button" disabled>{t('common.preview')}</button>
+        <button type="button" disabled>{t('common.edit')}</button>
+        <button className="inspector-trigger" type="button" onClick={() => setInspectorOpen(true)}>{t('common.metadata')}</button>
       </div>
       <div className="raw-console empty-console">
         <div className="console-ruler" aria-hidden="true"><span>001</span><span>002</span><span>003</span><span>004</span></div>
         <div className="console-empty-copy">
-          <StatusLamp tone="idle">Console chưa hoạt động</StatusLamp>
-          <h1>Markdown sẽ xuất hiện theo từng trang.</h1>
-          <p>Chọn ảnh ở cột nguồn. Mỗi trang hoàn tất sẽ được đặt đúng vị trí, kể cả khi OCR trả kết quả lệch thứ tự.</p>
+          <StatusLamp tone="idle">{t('upload.consoleInactive')}</StatusLamp>
+          <h1>{t('upload.markdownAppears')}</h1>
+          <p>{t('upload.consoleHelp')}</p>
         </div>
       </div>
     </Panel>

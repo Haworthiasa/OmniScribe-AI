@@ -13,6 +13,16 @@ export function pageAnchor(number) {
   return `ocr-page-${number}`
 }
 
+export function stripPageMarkers(markdown = '') {
+  const visible = markdown.replace(
+    /^[ \t]*<!--\s*page:\d+\s*-->[ \t]*(?:\r?\n(?:[ \t]*\r?\n)*)?/gim,
+    '',
+  )
+  return visible
+    .replace(/^(?:[ \t]*\r?\n)+/, '')
+    .replace(/(?:\r?\n[ \t]*)+$/, '')
+}
+
 export function pageDocumentSection(page) {
   if (page.status === 'done' && page.markdown?.trim()) {
     return page.markdown.trim()

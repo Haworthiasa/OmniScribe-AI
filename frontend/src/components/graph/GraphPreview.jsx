@@ -2,6 +2,7 @@ import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { neighborIds, nodeRadius } from '../../lib/graphModel'
+import { useI18n } from '../../lib/i18n'
 
 function useSize(ref, fallback) {
   const [size, setSize] = useState(fallback)
@@ -53,15 +54,16 @@ function useForceLayout(graph, size, compact, resetKey) {
   return { nodes, simulationRef }
 }
 
-function typeLabel(node) {
-  if (node.type === 'category') return 'Danh mục'
-  if (node.current) return 'Tài liệu hiện tại'
+function typeLabel(node, t) {
+  if (node.type === 'category') return t('graph.category')
+  if (node.current) return t('graph.current')
   if (node.type === 'tag') return 'Tag'
-  if (node.type === 'topic') return 'Chủ đề'
-  return 'Note'
+  if (node.type === 'topic') return t('graph.topic')
+  return t('graph.note')
 }
 
 function GraphCanvas({ graph, compact = false, selectedId, onSelect }) {
+  const { t } = useI18n()
   const wrapRef = useRef(null)
   const svgRef = useRef(null)
   const dragRef = useRef(null)
@@ -149,12 +151,12 @@ function GraphCanvas({ graph, compact = false, selectedId, onSelect }) {
   return (
     <div ref={wrapRef} className={compact ? 'local-graph compact' : 'local-graph expanded'}>
       {!compact && (
-        <div className="graph-canvas-controls" role="group" aria-label="Điều khiển canvas graph">
-          <button type="button" onClick={() => zoom(0.8)} aria-label="Thu nhỏ">−</button>
+        <div className="graph-canvas-controls" role="group" aria-label={t('graph.controls')}>
+          <button type="button" onClick={() => zoom(0.8)} aria-label={t('graph.zoomOut')}>−</button>
           <output>{Math.round(view.scale * 100)}%</output>
-          <button type="button" onClick={() => zoom(1.25)} aria-label="Phóng to">+</button>
-          <button type="button" onClick={fit}>Vừa khung</button>
-          <button type="button" onClick={reset}>Đặt lại</button>
+          <button type="button" onClick={() => zoom(1.25)} aria-label={t('graph.zoomIn')}>+</button>
+          <button type="button" onClick={fit}>{t('graph.fit')}</button>
+          <button type="button" onClick={reset}>{t('graph.reset')}</button>
         </div>
       )}
       <svg
@@ -163,7 +165,7 @@ function GraphCanvas({ graph, compact = false, selectedId, onSelect }) {
         height={size.height}
         viewBox={`0 0 ${size.width} ${size.height}`}
         role="group"
-        aria-label="Local graph của tài liệu"
+        aria-label={t('graph.documentAria')}
         onPointerDown={startPan}
         onPointerMove={movePointer}
         onPointerUp={endPointer}
@@ -192,7 +194,7 @@ function GraphCanvas({ graph, compact = false, selectedId, onSelect }) {
                   transform={`translate(${node.x} ${node.y})`}
                   role="button"
                   tabIndex="0"
-                  aria-label={`${typeLabel(node)}: ${node.label}`}
+                  aria-label={`${typeLabel(node, t)}: ${node.label}`}
                   onPointerDown={(event) => startNodeDrag(event, node)}
                   onPointerEnter={() => setHoveredId(node.id)}
                   onPointerLeave={() => setHoveredId('')}
@@ -214,6 +216,7 @@ function GraphCanvas({ graph, compact = false, selectedId, onSelect }) {
 }
 
 function GraphDialog({ graph, depth, includeTags, onDepthChange, onTagsChange, onClose }) {
+  const { t } = useI18n()
   const dialogRef = useRef(null)
   const [selectedId, setSelectedId] = useState(graph.center_id)
   const selected = graph.nodes.find((node) => node.id === selectedId)
@@ -222,24 +225,28 @@ function GraphDialog({ graph, depth, includeTags, onDepthChange, onTagsChange, o
   }, [graph, selectedId])
   useEffect(() => {
     const dialog = dialogRef.current
-    dialog?.showModal()
-    return () => dialog?.open && dialog.close()
+    if (!dialog) return
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal()
+    } else {
+      dialog.setAttribute('open', '')
+    }
   }, [])
   return createPortal(
     <dialog ref={dialogRef} className="graph-dialog" onCancel={(event) => { event.preventDefault(); onClose() }} onClose={onClose}>
       <div className="graph-dialog-shell">
         <header>
-          <div><span className="panel-code">B2 / LOCAL</span><h2>Graph explorer</h2></div>
+          <div><span className="panel-code">B2 / LOCAL</span><h2>{t('graph.explorer')}</h2></div>
           <div className="graph-dialog-options">
-            <label>Độ sâu<select value={depth} onChange={(event) => onDepthChange(Number(event.target.value))}><option value="1">1</option><option value="2">2</option></select></label>
-            <label className="graph-checkbox"><input type="checkbox" checked={includeTags} onChange={(event) => onTagsChange(event.target.checked)} /> Hiện tags</label>
-            <button className="icon-button" type="button" onClick={onClose} aria-label="Đóng graph">×</button>
+            <label>{t('graph.depth')}<select value={depth} onChange={(event) => onDepthChange(Number(event.target.value))}><option value="1">1</option><option value="2">2</option></select></label>
+            <label className="graph-checkbox"><input type="checkbox" checked={includeTags} onChange={(event) => onTagsChange(event.target.checked)} /> {t('graph.showTags')}</label>
+            <button className="icon-button" type="button" onClick={onClose} aria-label={t('graph.close')}>×</button>
           </div>
         </header>
         <div className="graph-explorer-body">
           <GraphCanvas graph={graph} selectedId={selectedId} onSelect={setSelectedId} />
           <aside className="graph-node-detail" aria-live="polite">
-            {selected && <><span>{typeLabel(selected)}</span><h3>{selected.label}</h3><dl><div><dt>Liên kết</dt><dd>{selected.degree}</dd></div><div><dt>Trạng thái</dt><dd>{selected.exists ? 'Có trong vault' : 'Tạm thời'}</dd></div></dl>{selected.path && <code>{selected.path}</code>}{selected.open_uri && <a className="machine-button primary" href={selected.open_uri}>Mở trong Obsidian</a>}</>}
+            {selected && <><span>{typeLabel(selected, t)}</span><h3>{selected.label}</h3><dl><div><dt>{t('graph.links')}</dt><dd>{selected.degree}</dd></div><div><dt>{t('graph.status')}</dt><dd>{selected.exists ? t('graph.inVault') : t('graph.temporary')}</dd></div></dl>{selected.path && <code>{selected.path}</code>}{selected.open_uri && <a className="machine-button primary" href={selected.open_uri}>{t('inspector.openObsidian')}</a>}</>}
           </aside>
         </div>
       </div>
@@ -249,6 +256,7 @@ function GraphDialog({ graph, depth, includeTags, onDepthChange, onTagsChange, o
 }
 
 export default function GraphPreview({ graph, loading, depth, includeTags, onDepthChange, onTagsChange }) {
+  const { t } = useI18n()
   const [selectedId, setSelectedId] = useState(graph.center_id)
   const [open, setOpen] = useState(false)
   const openButtonRef = useRef(null)
@@ -266,8 +274,8 @@ export default function GraphPreview({ graph, loading, depth, includeTags, onDep
     <div className="graph-preview-shell" aria-busy={loading}>
       {graph.warnings?.length > 0 && <div className="graph-warning" role="status">{graph.warnings[0]}</div>}
       <GraphCanvas graph={graph} compact selectedId={selectedId} onSelect={setSelectedId} />
-      <div className="graph-preview-status"><span>{selected ? `${typeLabel(selected)} · ${selected.label}` : `${graph.nodes.length} nodes`}</span>{graph.truncated && <small>Đã giới hạn kết quả</small>}</div>
-      <button ref={openButtonRef} className="machine-button secondary full" type="button" onClick={() => setOpen(true)}>Mở graph</button>
+      <div className="graph-preview-status"><span>{selected ? `${typeLabel(selected, t)} · ${selected.label}` : t('graph.nodeCount', { count: graph.nodes.length })}</span>{graph.truncated && <small>{t('graph.truncated')}</small>}</div>
+      <button ref={openButtonRef} className="machine-button secondary full" type="button" onClick={() => setOpen(true)}>{t('graph.open')}</button>
       {open && <GraphDialog graph={graph} depth={depth} includeTags={includeTags} onDepthChange={onDepthChange} onTagsChange={onTagsChange} onClose={close} />}
     </div>
   )

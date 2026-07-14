@@ -5,6 +5,7 @@ import {
   buildLiveDocument,
   limitPrimaryTags,
   resolveDocument,
+  stripPageMarkers,
   splitDocumentByPage,
 } from './workbench.js'
 
@@ -35,6 +36,14 @@ test('giữ placeholder, lỗi từng trang và thay bằng bản final khi read
 test('tách bản final thành section để deep link tới từng trang', () => {
   const sections = splitDocumentByPage('<!-- page:1 -->\n\nMột\n\n---\n\n<!-- page:2 -->\n\nHai')
   assert.deepEqual(sections, [{ number: 1, text: 'Một' }, { number: 2, text: 'Hai' }])
+})
+
+test('ẩn marker phân trang nội bộ khỏi Markdown hiển thị cho người dùng', () => {
+  const markdown = '<!-- page:1 -->\n\nMột\n\n---\n\n<!-- page:2 -->\n\nHai'
+  const visible = stripPageMarkers(markdown)
+  assert.doesNotMatch(visible, /<!--\s*page:/)
+  assert.equal(visible, 'Một\n\n---\n\nHai')
+  assert.equal(stripPageMarkers('<!-- page:1 -->\n\n    indented code'), '    indented code')
 })
 
 test('graph loại trùng không phân biệt hoa thường và có layout deterministic', () => {

@@ -1,15 +1,5 @@
 import { Link } from 'react-router-dom'
-
-const PHASE_LABELS = {
-  queued: 'Đang xếp hàng',
-  processing: 'GLM OCR đang chạy',
-  organizing: 'Đang tổ chức nội dung',
-  ready: 'Sẵn sàng kiểm tra',
-  exporting: 'Đang lưu Obsidian',
-  exported: 'Đã lưu Obsidian',
-  error: 'Cần kiểm tra',
-  upload: 'Chưa bắt đầu',
-}
+import { useI18n } from '../lib/i18n'
 
 export function Panel({ code, title, note, children, className = '', as: Element = 'section' }) {
   return (
@@ -39,49 +29,55 @@ export default function WorkbenchShell({
   inspectorOpen = false,
   onInspectorClose,
 }) {
+  const { language, setLanguage, t } = useI18n()
   const backendTone = health?.offline ? 'danger' : health ? (health.demo_mode ? 'warning' : 'success') : 'idle'
-  const backendLabel = health?.offline ? 'Backend offline' : health ? (health.demo_mode ? 'Chế độ demo' : 'Backend sẵn sàng') : 'Đang kết nối'
+  const backendLabel = health?.offline ? t('shell.backendOffline') : health ? (health.demo_mode ? t('shell.demoMode') : t('shell.backendReady')) : t('shell.connecting')
   const progress = totalPages ? Math.round((processedPages / totalPages) * 100) : 0
 
   return (
     <main className="workbench-shell">
       <header className="machine-header">
-        <Link className="machine-wordmark" to="/" aria-label="OmniScribe AI — trang chủ">
+        <Link className="machine-wordmark" to="/" aria-label={t('shell.home')}>
           <span className="wordmark-registration" aria-hidden="true">OS</span>
           <span>OMNISCRIBE <b>AI</b></span>
-          <small>Proofing workstation</small>
+          <small>{t('brand.subtitle')}</small>
         </Link>
-        <div className="machine-readouts" aria-label="Trạng thái hệ thống">
+        <div className="machine-readouts" aria-label={t('shell.systemStatus')}>
           <StatusLamp tone={backendTone}>{backendLabel}</StatusLamp>
-          <span className="header-readout"><small>Pha</small>{PHASE_LABELS[phase] || phase}</span>
-          <span className="header-readout"><small>Trang</small>{processedPages}/{totalPages}</span>
-          <span className="header-progress" aria-label={`Tiến độ ${progress}%`}>
+          <span className="header-readout"><small>{t('shell.phase')}</small>{t(`phase.${phase}`)}</span>
+          <span className="header-readout"><small>{t('shell.pages')}</small>{processedPages}/{totalPages}</span>
+          <span className="header-progress" aria-label={t('shell.progress', { progress })}>
             <i style={{ width: `${progress}%` }} />
             <b>{progress}%</b>
           </span>
+          <div className="language-switch" role="group" aria-label={t('language.label')}>
+            <button type="button" aria-pressed={language === 'vi'} onClick={() => setLanguage('vi')}>VI</button>
+            <button type="button" aria-pressed={language === 'en'} onClick={() => setLanguage('en')}>EN</button>
+          </div>
         </div>
       </header>
 
       <div className="workbench-grid">
-        <aside className="workbench-left" aria-label="Nguồn và quy trình">{left}</aside>
-        <section className="workbench-center" aria-label="Bản OCR Markdown">{center}</section>
-        <aside className={`workbench-right ${inspectorOpen ? 'is-open' : ''}`} aria-label="Metadata và knowledge graph">
-          <button className="drawer-close icon-button" type="button" onClick={onInspectorClose} aria-label="Đóng bảng metadata">×</button>
+        <aside className="workbench-left" aria-label={t('shell.sourceWorkflow')}>{left}</aside>
+        <section className="workbench-center" aria-label={t('shell.ocrDocument')}>{center}</section>
+        <aside className={`workbench-right ${inspectorOpen ? 'is-open' : ''}`} aria-label={t('shell.metadataGraph')}>
+          <button className="drawer-close icon-button" type="button" onClick={onInspectorClose} aria-label={t('shell.closeMetadata')}>×</button>
           {right}
         </aside>
-        {inspectorOpen && <button className="drawer-scrim" type="button" onClick={onInspectorClose} aria-label="Đóng bảng metadata" />}
+        {inspectorOpen && <button className="drawer-scrim" type="button" onClick={onInspectorClose} aria-label={t('shell.closeMetadata')} />}
       </div>
     </main>
   )
 }
 
 export function Pipeline({ phase = 'upload' }) {
+  const { t } = useI18n()
   const steps = [
-    ['Nhận trang', ['processing', 'organizing', 'ready', 'exporting', 'exported']],
-    ['GLM OCR', ['organizing', 'ready', 'exporting', 'exported']],
-    ['Tổ chức nội dung', ['ready', 'exporting', 'exported']],
-    ['Kiểm tra bản nháp', ['exporting', 'exported']],
-    ['Lưu Obsidian', ['exported']],
+    [t('pipeline.receive'), ['processing', 'organizing', 'ready', 'exporting', 'exported']],
+    [t('pipeline.ocr'), ['organizing', 'ready', 'exporting', 'exported']],
+    [t('pipeline.organize'), ['ready', 'exporting', 'exported']],
+    [t('pipeline.review'), ['exporting', 'exported']],
+    [t('pipeline.save'), ['exported']],
   ]
   const activeByPhase = { upload: 0, queued: 0, processing: 1, organizing: 2, ready: 3, exporting: 4, exported: 5, error: -1 }
   const active = activeByPhase[phase] ?? 0
@@ -93,7 +89,7 @@ export function Pipeline({ phase = 'upload' }) {
         return (
           <li className={done ? 'done' : current ? 'current' : phase === 'error' ? 'failed' : ''} key={label}>
             <span aria-hidden="true">{done ? '✓' : String(index + 1).padStart(2, '0')}</span>
-            <div><strong>{label}</strong><small>{done ? 'Hoàn tất' : current ? 'Đang ở bước này' : phase === 'error' ? 'Bị gián đoạn' : 'Chờ'}</small></div>
+            <div><strong>{label}</strong><small>{done ? t('pipeline.done') : current ? t('pipeline.current') : phase === 'error' ? t('pipeline.interrupted') : t('pipeline.waiting')}</small></div>
           </li>
         )
       })}

@@ -36,7 +36,7 @@ Open `http://localhost:5173`. Demo mode is enabled in `.env.example`, so the com
 
 To use real APIs, set `DEMO_MODE=false`, add `Z_AI_API_KEY`, `LLM_API_KEY`, and an absolute `VAULT_PATH`. Never commit `backend/.env`.
 
-The graph indexes `OmniScribe` by default. Add comma-separated relative folders with `VAULT_GRAPH_ROOTS`; use `.` only if indexing the entire vault is intentional. Existing handwritten notes are never changed automatically. Preview or apply the category-link migration with:
+The graph indexes `OmniScribe` by default. Add comma-separated relative folders with `VAULT_GRAPH_ROOTS`; use `.` only if indexing the entire vault is intentional. If the Obsidian vault root is the `OmniScribe` folder itself, set `VAULT_PATH` to that folder and `VAULT_GRAPH_ROOTS=.`; exports then use `Inbox/`, `Topics/`, `Categories/`, and `Attachments/` directly without creating a nested `OmniScribe/OmniScribe` directory. Existing handwritten notes are never changed automatically. Preview or apply the category-link migration with:
 
 ```powershell
 python backend/scripts/migrate_category_links.py --dry-run

@@ -552,6 +552,29 @@ Kết quả mong đợi:
 - Bảng chỉ cuộn ngang trong vùng preview nếu cần.
 - Toàn trang không phát sinh horizontal overflow.
 
+### TC-42 — Marker phân trang nội bộ
+
+- [ ] Mở tài liệu có ít nhất hai trang ở chế độ Markdown, Xem trước và Chỉnh sửa.
+
+Kết quả mong đợi:
+
+- Không chế độ nào hiển thị `<!-- page:1 -->`, `<!-- page:2 -->` hoặc marker tương tự.
+- Hàng đợi trang vẫn chọn và cuộn tới đúng section trong chế độ Markdown.
+- Nội dung OCR và định dạng Markdown không bị thay đổi khi marker được ẩn.
+
+### TC-43 — Chuyển ngôn ngữ VI/EN
+
+- [ ] Nhấn `EN` trên header, kiểm tra các panel, pipeline, toolbar, metadata và graph.
+- [ ] Tải lại trang, sau đó nhấn `VI`.
+- [ ] Kiểm tra ở desktop, tablet và mobile.
+
+Kết quả mong đợi:
+
+- Nhãn giao diện chuyển giữa tiếng Việt và tiếng Anh ngay lập tức.
+- Nội dung OCR, tiêu đề và metadata của tài liệu không bị dịch.
+- Lựa chọn ngôn ngữ được giữ sau khi tải lại.
+- Toggle dùng được bằng bàn phím và không tạo horizontal overflow.
+
 ---
 
 ## 9. Kiểm tra tự động bổ sung
