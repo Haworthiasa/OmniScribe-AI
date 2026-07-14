@@ -10,6 +10,12 @@ class GlmOcrService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.semaphore = asyncio.Semaphore(settings.ocr_concurrency)
+        base_url = settings.z_ai_base_url.rstrip("/")
+        self.endpoint_url = (
+            base_url
+            if base_url.endswith("/layout_parsing")
+            else f"{base_url}/layout_parsing"
+        )
 
     async def parse(self, content: bytes, mime_type: str, page_number: int) -> str:
         if self.settings.demo_mode:
@@ -28,7 +34,7 @@ class GlmOcrService:
                 for attempt in range(3):
                     try:
                         response = await client.post(
-                            f"{self.settings.z_ai_base_url}/layout_parsing",
+                            self.endpoint_url,
                             headers=headers,
                             json=payload,
                         )
@@ -64,4 +70,3 @@ class GlmOcrService:
                 "| OCR | Nhận dạng nội dung |\n| Markdown | Định dạng đầu ra |"
             )
         return "## Công thức\n\nNăng lượng được ghi lại dưới dạng:\n\n$$E = mc^2$$"
-

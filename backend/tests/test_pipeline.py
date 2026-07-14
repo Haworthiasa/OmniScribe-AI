@@ -12,6 +12,8 @@ import main
 from config import Settings
 from job_store import JobStore
 from models import Job, Page
+from services.glm_ocr import GlmOcrService
+from services.metadata_llm import MetadataLlmService
 from services.obsidian import ObsidianExporter, slugify
 
 
@@ -38,6 +40,25 @@ class CoreTests(unittest.TestCase):
                 settings = Settings.from_env()
         self.assertEqual(settings.vault_path.name, "demo-vault")
 
+    def test_glm_ocr_accepts_base_or_full_layout_parsing_url(self):
+        base_settings = replace(
+            main.settings,
+            z_ai_base_url="https://api.z.ai/api/paas/v4",
+        )
+        full_url_settings = replace(
+            main.settings,
+            z_ai_base_url="https://api.z.ai/api/paas/v4/layout_parsing/",
+        )
+
+        self.assertEqual(
+            GlmOcrService(base_settings).endpoint_url,
+            "https://api.z.ai/api/paas/v4/layout_parsing",
+        )
+        self.assertEqual(
+            GlmOcrService(full_url_settings).endpoint_url,
+            "https://api.z.ai/api/paas/v4/layout_parsing",
+        )
+
 
 class JobStoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_late_subscriber_receives_replayed_events(self):
@@ -58,10 +79,17 @@ class JobStoreTests(unittest.IsolatedAsyncioTestCase):
 class ApiFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_demo_upload_review_and_export(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            original_exporter = main.obsidian_exporter
-            main.obsidian_exporter = ObsidianExporter(
-                replace(main.settings, vault_path=Path(temp_dir).resolve(), demo_mode=True)
+            demo_settings = replace(
+                main.settings,
+                vault_path=Path(temp_dir).resolve(),
+                demo_mode=True,
             )
+            original_ocr_service = main.ocr_service
+            original_metadata_service = main.metadata_service
+            original_exporter = main.obsidian_exporter
+            main.ocr_service = GlmOcrService(demo_settings)
+            main.metadata_service = MetadataLlmService(demo_settings)
+            main.obsidian_exporter = ObsidianExporter(demo_settings)
             transport = httpx.ASGITransport(app=main.app)
             try:
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -97,6 +125,8 @@ class ApiFlowTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn("[[OmniScribe/Topics/", note_text)
                     self.assertIn("page-01.png", note_text)
             finally:
+                main.ocr_service = original_ocr_service
+                main.metadata_service = original_metadata_service
                 main.obsidian_exporter = original_exporter
 
     async def test_invalid_upload_is_rejected(self):

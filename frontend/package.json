@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "design:lint": "designmd lint ../DESIGN.md",
     "lint": "oxlint",
+    "test": "node --test src/**/*.test.js",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,6 +21,7 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
+    "@google/design.md": "^0.3.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",

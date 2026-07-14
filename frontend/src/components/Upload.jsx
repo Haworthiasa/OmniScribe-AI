@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Inspector from './Inspector'
+import WorkbenchShell, { Panel, Pipeline, StatusLamp } from './WorkbenchShell'
+import { EMPTY_METADATA } from '../lib/workbench'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 const MAX_FILES = 8
@@ -24,6 +27,7 @@ export default function Upload() {
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [draggingId, setDraggingId] = useState(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const inputRef = useRef(null)
   const itemsRef = useRef([])
   const navigate = useNavigate()
@@ -35,30 +39,19 @@ export default function Upload() {
       .catch(() => setHealth({ offline: true }))
   }, [])
 
-  useEffect(() => {
-    itemsRef.current = items
-  }, [items])
-
+  useEffect(() => { itemsRef.current = items }, [items])
   useEffect(() => () => itemsRef.current.forEach((item) => URL.revokeObjectURL(item.preview)), [])
 
   function addFiles(fileList) {
     const incoming = Array.from(fileList)
     const invalid = incoming.find((file) => !isAcceptedImage(file))
-    if (invalid) {
-      setError(`${invalid.name} không phải ảnh JPG hoặc PNG.`)
-      return
-    }
+    if (invalid) return setError(`${invalid.name} không phải ảnh JPG hoặc PNG.`)
     const tooLarge = incoming.find((file) => file.size > MAX_BYTES)
-    if (tooLarge) {
-      setError(`${tooLarge.name} vượt quá giới hạn 10 MB.`)
-      return
-    }
-    if (items.length + incoming.length > MAX_FILES) {
-      setError(`Mỗi lần chỉ xử lý tối đa ${MAX_FILES} ảnh.`)
-      return
-    }
+    if (tooLarge) return setError(`${tooLarge.name} vượt quá giới hạn 10 MB.`)
+    if (items.length + incoming.length > MAX_FILES) return setError(`Mỗi lần chỉ xử lý tối đa ${MAX_FILES} ảnh.`)
     setItems((current) => [...current, ...incoming.map(makeFileItem)])
     setError('')
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   function removeItem(id) {
@@ -85,6 +78,7 @@ export default function Upload() {
     setItems((current) => {
       const sourceIndex = current.findIndex((item) => item.id === draggingId)
       const targetIndex = current.findIndex((item) => item.id === targetId)
+      if (sourceIndex < 0 || targetIndex < 0) return current
       const next = [...current]
       const [moved] = next.splice(sourceIndex, 1)
       next.splice(targetIndex, 0, moved)
@@ -110,133 +104,89 @@ export default function Upload() {
     }
   }
 
-  return (
-    <main className="capture-shell">
-      <AppHeader health={health} />
-
-      <section className="capture-hero" aria-labelledby="capture-title">
-        <div className="hero-copy">
-          <p className="eyebrow">Từ nét bút đến knowledge graph</p>
-          <h1 id="capture-title">Đưa ghi chú viết tay<br />vào đúng hệ thống.</h1>
-          <p className="hero-description">
-            Chụp tài liệu, kiểm tra bản số hóa, rồi lưu thành Markdown có liên kết trong Obsidian.
-          </p>
-        </div>
-
-        <div className="process-key" aria-label="Quy trình gồm bốn bước">
-          {['Upload', 'OCR', 'Organize', 'Save'].map((step, index) => (
-            <div className={index === 0 ? 'process-step active' : 'process-step'} key={step}>
-              <span>{String(index + 1).padStart(2, '0')}</span>{step}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {health?.demo_mode && (
-        <div className="notice info" role="status">
-          <span>Demo mode</span>
-          App đang dùng kết quả OCR mô phỏng. Thêm API key vào <code>backend/.env</code> để xử lý ảnh thật.
-        </div>
-      )}
-      {health?.offline && (
-        <div className="notice danger" role="alert">
-          Backend chưa kết nối. Hãy chạy FastAPI tại cổng 8000.
-        </div>
-      )}
-
-      <section className="upload-workbench">
+  const left = (
+    <>
+      <Panel code="A1" title="Nguồn tài liệu" note={`${items.length}/${MAX_FILES} ảnh`}>
+        {health?.demo_mode && <div className="machine-notice warning" role="status"><strong>Demo mode</strong><span>OCR dùng dữ liệu mô phỏng.</span></div>}
+        {health?.offline && <div className="machine-notice danger" role="alert"><strong>Backend offline</strong><span>Chạy FastAPI tại cổng 8000 rồi thử lại.</span></div>}
         <div
-          className={`drop-zone ${items.length ? 'has-files' : ''}`}
+          className="compact-dropzone"
           onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault()
-            addFiles(event.dataTransfer.files)
-          }}
+          onDrop={(event) => { event.preventDefault(); addFiles(event.dataTransfer.files) }}
         >
-          <input
-            ref={inputRef}
-            className="visually-hidden"
-            type="file"
-            multiple
-            accept="image/jpeg,image/png"
-            onChange={(event) => addFiles(event.target.files)}
-          />
-          <div className="drop-mark" aria-hidden="true">
-            <span className="corner top-left" /><span className="corner top-right" />
-            <span className="corner bottom-left" /><span className="corner bottom-right" />
-            <svg viewBox="0 0 48 48"><path d="M12 35h24M24 33V10m0 0-8 8m8-8 8 8" /></svg>
-          </div>
-          <h2>{items.length ? 'Thêm trang khác' : 'Kéo ảnh ghi chú vào đây'}</h2>
-          <p>JPG hoặc PNG · tối đa 8 ảnh · 10 MB/ảnh</p>
-          <button className="secondary-button" type="button" onClick={() => inputRef.current?.click()}>
-            Chọn ảnh từ máy
-          </button>
+          <input ref={inputRef} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png" onChange={(event) => addFiles(event.target.files)} />
+          <span className="registration-mark" aria-hidden="true">⌜ + ⌟</span>
+          <strong>{items.length ? 'Thêm trang nguồn' : 'Đưa ảnh vào bàn kiểm bản'}</strong>
+          <small>JPG/PNG · tối đa 8 ảnh · 10 MB/ảnh</small>
+          <button className="machine-button secondary" type="button" onClick={() => inputRef.current?.click()}>Chọn ảnh</button>
         </div>
+        {error && <div className="machine-notice danger" role="alert"><strong>Không thể thêm ảnh</strong><span>{error}</span></div>}
+      </Panel>
 
-        <div className="queue-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Page queue</p>
-              <h2>{items.length ? `${items.length} trang đã chọn` : 'Chưa có trang nào'}</h2>
-            </div>
-            {items.length > 1 && <span className="utility-note">Kéo thẻ để đổi thứ tự</span>}
-          </div>
+      <Panel code="A2" title="Hàng đợi trang" note={items.length ? 'Kéo hoặc dùng nút mũi tên' : 'Trống'} className="queue-machine-panel">
+        {items.length ? (
+          <ol className="upload-queue">
+            {items.map((item, index) => (
+              <li
+                className={draggingId === item.id ? 'queue-row dragging' : 'queue-row'}
+                draggable
+                key={item.id}
+                onDragStart={() => setDraggingId(item.id)}
+                onDragEnd={() => setDraggingId(null)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => dropOn(item.id)}
+              >
+                <span className="folio">{String(index + 1).padStart(2, '0')}</span>
+                <img src={item.preview} alt={`Xem trước trang ${index + 1}: ${item.file.name}`} />
+                <span className="queue-copy" title={item.file.name}><strong>{item.file.name}</strong><small>{(item.file.size / 1024 / 1024).toFixed(1)} MB · Chờ tải</small></span>
+                <span className="queue-actions">
+                  <button className="icon-button" type="button" onClick={() => moveItem(item.id, -1)} disabled={index === 0} aria-label={`Đưa ${item.file.name} lên`}>↑</button>
+                  <button className="icon-button" type="button" onClick={() => moveItem(item.id, 1)} disabled={index === items.length - 1} aria-label={`Đưa ${item.file.name} xuống`}>↓</button>
+                  <button className="icon-button danger" type="button" onClick={() => removeItem(item.id)} aria-label={`Xóa ${item.file.name}`}>×</button>
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : <div className="queue-empty"><span>00</span><p>Trang được chọn sẽ xuất hiện ở đây theo đúng thứ tự ghép Markdown.</p></div>}
+        <button className="machine-button primary" type="button" onClick={startDigitizing} disabled={!items.length || uploading || health?.offline}>
+          {uploading ? 'Đang tải ảnh…' : `Bắt đầu số hóa${items.length ? ` · ${items.length} trang` : ''}`}
+        </button>
+      </Panel>
 
-          {items.length ? (
-            <ol className="thumbnail-list">
-              {items.map((item, index) => (
-                <li
-                  className={draggingId === item.id ? 'thumbnail-card dragging' : 'thumbnail-card'}
-                  key={item.id}
-                  draggable
-                  onDragStart={() => setDraggingId(item.id)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => dropOn(item.id)}
-                  onDragEnd={() => setDraggingId(null)}
-                >
-                  <span className="page-index">{String(index + 1).padStart(2, '0')}</span>
-                  <img src={item.preview} alt={`Xem trước trang ${index + 1}`} />
-                  <div className="thumbnail-meta">
-                    <strong>{item.file.name}</strong>
-                    <span>{(item.file.size / 1024 / 1024).toFixed(1)} MB</span>
-                  </div>
-                  <div className="thumbnail-actions">
-                    <button type="button" onClick={() => moveItem(item.id, -1)} disabled={index === 0} aria-label="Đưa trang lên">↑</button>
-                    <button type="button" onClick={() => moveItem(item.id, 1)} disabled={index === items.length - 1} aria-label="Đưa trang xuống">↓</button>
-                    <button type="button" className="remove" onClick={() => removeItem(item.id)} aria-label="Xóa trang">×</button>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <div className="empty-queue">
-              <span>01</span>
-              Trang đầu tiên sẽ xuất hiện ở đây để bạn kiểm tra và sắp xếp.
-            </div>
-          )}
-
-          {error && <div className="form-error" role="alert">{error}</div>}
-          <button className="primary-button" type="button" disabled={!items.length || uploading || health?.offline} onClick={startDigitizing}>
-            {uploading ? <><span className="button-spinner" />Đang tải ảnh</> : `Bắt đầu số hóa${items.length ? ` ${items.length} trang` : ''}`}
-          </button>
-        </div>
-      </section>
-    </main>
+      <Panel code="A3" title="Pipeline" note="5 bước"><Pipeline phase="upload" /></Panel>
+    </>
   )
-}
 
-export function AppHeader({ health }) {
-  const statusLabel = !health ? 'Đang kết nối' : health.offline ? 'Backend offline' : health.demo_mode ? 'Demo workspace' : 'API ready'
-  return (
-    <header className="app-header">
-      <a className="wordmark" href="/" aria-label="OmniScribe AI — trang chủ">
-        <span className="wordmark-glyph" aria-hidden="true">O</span>
-        <span>OmniScribe <b>AI</b></span>
-      </a>
-      <div className="system-status">
-        <span className={`status-dot ${health?.offline ? 'offline' : !health ? 'pending' : ''}`} />
-        {statusLabel}
+  const center = (
+    <Panel code="M1" title="OCR Markdown trực tiếp" note="Chờ trang nguồn" className="console-panel">
+      <div className="console-toolbar" role="toolbar" aria-label="Chế độ xem tài liệu">
+        <button className="active" type="button">Markdown</button>
+        <button type="button" disabled>Ảnh gốc</button>
+        <button type="button" disabled>Xem trước</button>
+        <button type="button" disabled>Chỉnh sửa</button>
+        <button className="inspector-trigger" type="button" onClick={() => setInspectorOpen(true)}>Metadata</button>
       </div>
-    </header>
+      <div className="raw-console empty-console">
+        <div className="console-ruler" aria-hidden="true"><span>001</span><span>002</span><span>003</span><span>004</span></div>
+        <div className="console-empty-copy">
+          <StatusLamp tone="idle">Console chưa hoạt động</StatusLamp>
+          <h1>Markdown sẽ xuất hiện theo từng trang.</h1>
+          <p>Chọn ảnh ở cột nguồn. Mỗi trang hoàn tất sẽ được đặt đúng vị trí, kể cả khi OCR trả kết quả lệch thứ tự.</p>
+        </div>
+      </div>
+    </Panel>
+  )
+
+  return (
+    <WorkbenchShell
+      health={health}
+      phase="upload"
+      totalPages={items.length}
+      left={left}
+      center={center}
+      right={<Inspector metadata={EMPTY_METADATA} />}
+      inspectorOpen={inspectorOpen}
+      onInspectorClose={() => setInspectorOpen(false)}
+    />
   )
 }

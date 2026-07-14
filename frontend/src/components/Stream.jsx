@@ -1,33 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import Inspector from './Inspector'
 import MarkdownRenderer from './MarkdownRenderer'
-import { AppHeader } from './Upload'
+import WorkbenchShell, { Panel, Pipeline, StatusLamp } from './WorkbenchShell'
+import { EMPTY_METADATA, pageAnchor, resolveDocument, splitDocumentByPage } from '../lib/workbench'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-const EMPTY_META = { title: '', summary: '', document_type: 'notes', category: '', tags: [], topics: [] }
+
+const PAGE_STATUS = {
+  queued: 'Chờ',
+  processing: 'Đang OCR',
+  done: 'Đã xong',
+  error: 'Lỗi',
+}
+
+const PHASE_NOTE = {
+  queued: 'Đang xếp hàng',
+  processing: 'Cập nhật theo từng trang',
+  organizing: 'Đang tổ chức nội dung',
+  ready: 'Bản final đã sẵn sàng',
+  exporting: 'Đang ghi vào vault',
+  exported: 'Đã ghi vào vault',
+  error: 'Quy trình bị gián đoạn',
+}
 
 export default function Stream() {
   const { jobId } = useParams()
   const [job, setJob] = useState(null)
   const [health, setHealth] = useState(null)
-  const [metadata, setMetadata] = useState(EMPTY_META)
+  const [metadata, setMetadata] = useState(EMPTY_METADATA)
   const [markdown, setMarkdown] = useState('')
   const [activePage, setActivePage] = useState(1)
-  const [view, setView] = useState('source')
+  const [view, setView] = useState('markdown')
   const [connectionWarning, setConnectionWarning] = useState('')
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(false)
   const [exportResult, setExportResult] = useState(null)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
   const statusRef = useRef('queued')
 
   function applySnapshot(snapshot) {
     setJob(snapshot)
     statusRef.current = snapshot.status
     if (snapshot.metadata) setMetadata(snapshot.metadata)
-    if (snapshot.combined_markdown) {
-      setMarkdown(snapshot.combined_markdown)
-      if (snapshot.status === 'ready') setView('preview')
-    }
+    if (snapshot.combined_markdown) setMarkdown(snapshot.combined_markdown)
     if (snapshot.export_result) setExportResult(snapshot.export_result)
     if (snapshot.error) setError(snapshot.error)
   }
@@ -35,36 +51,6 @@ export default function Stream() {
   useEffect(() => {
     let cancelled = false
     let events
-
-    async function load() {
-      try {
-        const response = await fetch(`${API_BASE}/api/jobs/${jobId}`)
-        if (!response.ok) throw new Error('Không tìm thấy phiên xử lý này.')
-        const snapshot = await response.json()
-        if (!cancelled) applySnapshot(snapshot)
-
-        if (!['exported', 'error'].includes(snapshot.status)) {
-          events = new EventSource(`${API_BASE}/api/jobs/${jobId}/events?after=${snapshot.last_event_id || 0}`)
-          events.onopen = () => setConnectionWarning('')
-          events.onmessage = (message) => handleEvent(JSON.parse(message.data))
-          events.onerror = async () => {
-            if (['exported', 'error'].includes(statusRef.current)) {
-              events.close()
-              return
-            }
-            setConnectionWarning('Mất kết nối tạm thời. Đang thử kết nối lại…')
-            try {
-              const latest = await fetch(`${API_BASE}/api/jobs/${jobId}`).then((result) => result.json())
-              if (!cancelled) applySnapshot(latest)
-            } catch {
-              // EventSource will retry automatically.
-            }
-          }
-        }
-      } catch (loadError) {
-        if (!cancelled) setError(loadError.message)
-      }
-    }
 
     function handleEvent(event) {
       setJob((current) => {
@@ -77,6 +63,7 @@ export default function Stream() {
             if (event.type === 'page.ocr_completed') {
               page.status = 'done'
               page.markdown = event.markdown
+              page.error = null
             }
             if (event.type === 'page.ocr_failed') {
               page.status = 'error'
@@ -93,11 +80,15 @@ export default function Stream() {
           next.combined_markdown = event.markdown
           setMetadata(event.metadata)
           setMarkdown(event.markdown)
-          setView('preview')
         }
         if (event.type === 'job.failed') {
           next.status = 'error'
           next.error = event.error
+          setError(event.error)
+        }
+        if (event.type === 'export.started') next.status = 'exporting'
+        if (event.type === 'export.failed') {
+          next.status = 'ready'
           setError(event.error)
         }
         if (event.type === 'export.completed') {
@@ -110,6 +101,32 @@ export default function Stream() {
       })
     }
 
+    async function load() {
+      try {
+        const response = await fetch(`${API_BASE}/api/jobs/${jobId}`)
+        if (!response.ok) throw new Error('Không tìm thấy phiên xử lý này.')
+        const snapshot = await response.json()
+        if (!cancelled) applySnapshot(snapshot)
+        if (!['exported', 'error'].includes(snapshot.status)) {
+          events = new EventSource(`${API_BASE}/api/jobs/${jobId}/events?after=${snapshot.last_event_id || 0}`)
+          events.onopen = () => setConnectionWarning('')
+          events.onmessage = (message) => handleEvent(JSON.parse(message.data))
+          events.onerror = async () => {
+            if (['exported', 'error'].includes(statusRef.current)) return events.close()
+            setConnectionWarning('Mất kết nối tạm thời. Đang thử đồng bộ lại từ snapshot…')
+            try {
+              const latest = await fetch(`${API_BASE}/api/jobs/${jobId}`).then((result) => result.json())
+              if (!cancelled) applySnapshot(latest)
+            } catch {
+              // EventSource tự thử kết nối lại; snapshot là lớp phục hồi bổ sung.
+            }
+          }
+        }
+      } catch (loadError) {
+        if (!cancelled) setError(loadError.message)
+      }
+    }
+
     load()
     return () => {
       cancelled = true
@@ -119,16 +136,21 @@ export default function Stream() {
 
   useEffect(() => {
     fetch(`${API_BASE}/api/health`)
-      .then((response) => response.json())
+      .then((response) => response.ok ? response.json() : Promise.reject())
       .then(setHealth)
       .catch(() => setHealth({ offline: true }))
   }, [])
 
-  const progress = useMemo(() => {
-    if (!job?.total_pages) return 0
-    if (['organizing', 'ready', 'exporting', 'exported'].includes(job.status)) return 100
-    return Math.round((job.processed_pages / job.total_pages) * 82)
-  }, [job])
+  const ready = Boolean(job && ['ready', 'exporting', 'exported'].includes(job.status))
+  const documentText = useMemo(() => ready ? markdown : resolveDocument(job), [job, markdown, ready])
+  const sections = useMemo(() => splitDocumentByPage(documentText, job?.pages), [documentText, job?.pages])
+
+  function selectPage(number) {
+    setActivePage(number)
+    if (view === 'source') return
+    if (view !== 'markdown') setView('markdown')
+    requestAnimationFrame(() => document.getElementById(pageAnchor(number))?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+  }
 
   function updateMetadata(field, value) {
     setMetadata((current) => ({ ...current, [field]: value }))
@@ -150,6 +172,7 @@ export default function Stream() {
       setJob((current) => ({ ...current, status: 'exported', export_result: result }))
     } catch (saveError) {
       setError(saveError.message)
+      setJob((current) => ({ ...current, status: 'ready' }))
     } finally {
       setExporting(false)
     }
@@ -158,140 +181,104 @@ export default function Stream() {
   if (!job && !error) return <LoadingScreen />
   if (!job) return <FatalScreen message={error} />
 
-  const ready = ['ready', 'exported'].includes(job.status)
   const selectedPage = job.pages.find((page) => page.number === activePage) || job.pages[0]
+  const left = (
+    <>
+      <Panel code="A1" title="Nguồn tài liệu" note="Chỉ đọc">
+        <dl className="job-summary">
+          <div><dt>Job</dt><dd title={job.job_id}>{job.job_id.slice(0, 8)}</dd></div>
+          <div><dt>Trang</dt><dd>{job.total_pages}</dd></div>
+          <div><dt>Tạo lúc</dt><dd>{new Date(job.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</dd></div>
+        </dl>
+        <Link className="machine-button secondary full" to="/">Tạo tài liệu mới</Link>
+      </Panel>
+
+      <Panel code="A2" title="Hàng đợi trang" note={`${job.processed_pages}/${job.total_pages}`} className="queue-machine-panel">
+        <ol className="job-page-queue">
+          {job.pages.map((page) => (
+            <li key={page.number}>
+              <button className={page.number === activePage ? 'job-page-row active' : 'job-page-row'} type="button" onClick={() => selectPage(page.number)} aria-current={page.number === activePage ? 'page' : undefined}>
+                <span className="folio">{String(page.number).padStart(2, '0')}</span>
+                <img src={`${API_BASE}/api/jobs/${jobId}/pages/${page.number}/image`} alt="" />
+                <span className="queue-copy"><strong>{page.filename}</strong><small>{PAGE_STATUS[page.status]}</small></span>
+                <StatusLamp tone={page.status === 'done' ? 'success' : page.status === 'error' ? 'danger' : page.status === 'processing' ? 'active' : 'idle'}>
+                  <span className="visually-hidden">{PAGE_STATUS[page.status]}</span>
+                </StatusLamp>
+              </button>
+              {page.error && <p className="page-error-copy">{page.error}</p>}
+            </li>
+          ))}
+        </ol>
+      </Panel>
+
+      <Panel code="A3" title="Pipeline" note="5 bước"><Pipeline phase={job.status} /></Panel>
+    </>
+  )
+
+  const center = (
+    <Panel code="M1" title="OCR Markdown trực tiếp" note={PHASE_NOTE[job.status]} className="console-panel">
+      {(connectionWarning || error) && (
+        <div className={`machine-notice ${error ? 'danger' : 'warning'} console-notice`} role={error ? 'alert' : 'status'}>
+          <strong>{error ? 'Cần kiểm tra' : 'Đang đồng bộ lại'}</strong><span>{error || connectionWarning}</span>
+        </div>
+      )}
+      <div className="console-toolbar" role="toolbar" aria-label="Chế độ xem tài liệu">
+        <button className={view === 'markdown' ? 'active' : ''} type="button" onClick={() => setView('markdown')}>Markdown</button>
+        <button className={view === 'source' ? 'active' : ''} type="button" onClick={() => setView('source')}>Ảnh gốc</button>
+        <button className={view === 'preview' ? 'active' : ''} type="button" onClick={() => setView('preview')}>Xem trước</button>
+        <button className={view === 'edit' ? 'active' : ''} type="button" onClick={() => setView('edit')} disabled={!ready}>Chỉnh sửa</button>
+        <button className="inspector-trigger" type="button" onClick={() => setInspectorOpen(true)}>Metadata</button>
+      </div>
+      <div className={`console-viewport view-${view}`}>
+        {view === 'markdown' && <RawMarkdownDocument sections={sections} activePage={activePage} processing={job.status === 'processing'} />}
+        {view === 'source' && (
+          <figure className="source-view">
+            <img src={`${API_BASE}/api/jobs/${jobId}/pages/${selectedPage.number}/image`} alt={`Ảnh gốc trang ${selectedPage.number}: ${selectedPage.filename}`} />
+            <figcaption>Trang {selectedPage.number} · {selectedPage.filename}</figcaption>
+          </figure>
+        )}
+        {view === 'preview' && <div className="preview-paper"><MarkdownRenderer markdown={documentText} /></div>}
+        {view === 'edit' && <textarea className="markdown-editor" value={markdown} onChange={(event) => setMarkdown(event.target.value)} aria-label="Chỉnh sửa toàn bộ Markdown" spellCheck="false" />}
+      </div>
+    </Panel>
+  )
 
   return (
-    <main className="workspace-shell">
-      <AppHeader health={health} />
-      <PipelineHeader job={job} progress={progress} />
-
-      {connectionWarning && <div className="notice info compact" role="status">{connectionWarning}</div>}
-      {error && <div className="notice danger compact" role="alert">{error}</div>}
-
-      <section className="document-workspace">
-        <aside className="page-rail" aria-label="Danh sách trang">
-          <div className="rail-heading">
-            <span>Pages</span><b>{job.pages.length}</b>
-          </div>
-          {job.pages.map((page) => (
-            <button
-              className={page.number === activePage ? 'page-tile active' : 'page-tile'}
-              key={page.number}
-              type="button"
-              onClick={() => { setActivePage(page.number); setView('source') }}
-            >
-              <img src={`${API_BASE}/api/jobs/${jobId}/pages/${page.number}/image`} alt="" />
-              <span>Trang {String(page.number).padStart(2, '0')}</span>
-              <i className={`page-state ${page.status}`} aria-label={page.status} />
-            </button>
-          ))}
-          <Link className="new-document-link" to="/">+ Tài liệu mới</Link>
-        </aside>
-
-        <section className="document-stage">
-          <div className="stage-toolbar">
-            <div className="view-switch" role="group" aria-label="Chế độ xem">
-              <button className={view === 'source' ? 'active' : ''} onClick={() => setView('source')} type="button">Ảnh gốc</button>
-              <button className={view === 'preview' ? 'active' : ''} onClick={() => setView('preview')} type="button">Markdown</button>
-              {ready && <button className={view === 'edit' ? 'active' : ''} onClick={() => setView('edit')} type="button">Chỉnh sửa</button>}
-            </div>
-            <span className="stage-counter">Trang {activePage} / {job.total_pages}</span>
-          </div>
-
-          <div className={`stage-canvas ${view}`}>
-            {view === 'source' && (
-              <img className="source-document" src={`${API_BASE}/api/jobs/${jobId}/pages/${selectedPage.number}/image`} alt={`Ảnh gốc trang ${selectedPage.number}`} />
-            )}
-            {view === 'preview' && (
-              <div className="markdown-paper">
-                {selectedPage.markdown ? <MarkdownRenderer markdown={selectedPage.markdown} /> : ready ? <MarkdownRenderer markdown={markdown} /> : <ScanningPlaceholder />}
-              </div>
-            )}
-            {view === 'edit' && (
-              <textarea className="markdown-editor" value={markdown} onChange={(event) => setMarkdown(event.target.value)} aria-label="Nội dung Markdown" spellCheck="false" />
-            )}
-            {job.status === 'processing' && <div className="scan-seam" aria-hidden="true" />}
-          </div>
-        </section>
-
-        <aside className="inspector">
-          <div className="inspector-section pipeline-section">
-            <p className="eyebrow">Pipeline</p>
-            <StageList status={job.status} />
-          </div>
-
-          <div className="inspector-section metadata-section">
-            <div className="section-title-row"><p className="eyebrow">Metadata</p>{ready && <span className="ready-label">Có thể sửa</span>}</div>
-            <label>Tiêu đề<input value={metadata.title} disabled={!ready} onChange={(event) => updateMetadata('title', event.target.value)} /></label>
-            <label>Tóm tắt<textarea rows="3" value={metadata.summary} disabled={!ready} onChange={(event) => updateMetadata('summary', event.target.value)} /></label>
-            <div className="field-pair">
-              <label>Loại<input value={metadata.document_type} disabled={!ready} onChange={(event) => updateMetadata('document_type', event.target.value)} /></label>
-              <label>Danh mục<input value={metadata.category} disabled={!ready} onChange={(event) => updateMetadata('category', event.target.value)} /></label>
-            </div>
-            <label>Tags<input value={metadata.tags.join(', ')} disabled={!ready} onChange={(event) => updateMetadata('tags', event.target.value.split(',').map((value) => value.trim()).filter(Boolean))} placeholder="toán, ghi-chú" /></label>
-            <label>Chủ đề liên kết<input value={metadata.topics.join(', ')} disabled={!ready} onChange={(event) => updateMetadata('topics', event.target.value.split(',').map((value) => value.trim()).filter(Boolean))} placeholder="Học tập, Toán học" /></label>
-          </div>
-
-          <div className="inspector-footer">
-            {exportResult ? (
-              <div className="export-success">
-                <span className="success-mark">✓</span>
-                <div><strong>Đã lưu vào vault</strong><small>{exportResult.note_path}</small></div>
-                <a className="primary-button" href={exportResult.open_uri}>Mở trong Obsidian</a>
-                {exportResult.demo_vault && <p>Đây là demo vault trong thư mục backend.</p>}
-              </div>
-            ) : (
-              <button className="primary-button" type="button" onClick={saveToObsidian} disabled={!ready || exporting || !metadata.title.trim()}>
-                {exporting ? <><span className="button-spinner" />Đang lưu</> : 'Lưu vào Obsidian'}
-              </button>
-            )}
-          </div>
-        </aside>
-      </section>
-    </main>
+    <WorkbenchShell
+      health={health}
+      phase={job.status}
+      processedPages={job.processed_pages}
+      totalPages={job.total_pages}
+      left={left}
+      center={center}
+      right={<Inspector metadata={metadata} ready={ready} onChange={updateMetadata} onSave={saveToObsidian} saving={exporting} exportResult={exportResult} />}
+      inspectorOpen={inspectorOpen}
+      onInspectorClose={() => setInspectorOpen(false)}
+    />
   )
 }
 
-function PipelineHeader({ job, progress }) {
-  const statusText = {
-    queued: 'Đang xếp hàng', processing: 'Đang đọc từng trang', organizing: 'Đang tổ chức nội dung',
-    ready: 'Sẵn sàng kiểm tra', exporting: 'Đang ghi vào vault', exported: 'Đã hoàn tất', error: 'Cần kiểm tra',
-  }[job.status]
+function RawMarkdownDocument({ sections, activePage, processing }) {
+  let lineNumber = 0
   return (
-    <div className="pipeline-header">
-      <div><p className="eyebrow">Document job</p><h1>{statusText}</h1></div>
-      <div className="progress-block">
-        <div className="progress-copy"><span>{job.processed_pages} / {job.total_pages} trang</span><b>{progress}%</b></div>
-        <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
-      </div>
+    <div className="raw-console" aria-label="Markdown thô có số dòng">
+      {sections.map((section) => (
+        <section className={`raw-page-section ${section.number === activePage ? 'active' : ''} ${processing ? 'scanning' : ''}`} id={pageAnchor(section.number)} key={section.number} tabIndex="-1">
+          <div className="raw-page-label">PAGE {String(section.number).padStart(2, '0')}</div>
+          {(section.text || ' ').split('\n').map((line) => {
+            lineNumber += 1
+            return <div className="code-line" key={`${section.number}-${lineNumber}`}><span aria-hidden="true">{String(lineNumber).padStart(3, '0')}</span><code>{line || ' '}</code></div>
+          })}
+        </section>
+      ))}
     </div>
   )
 }
 
-function StageList({ status }) {
-  const order = ['processing', 'organizing', 'ready', 'exported']
-  const current = status === 'exporting' ? 3 : Math.max(0, order.indexOf(status))
-  const complete = status === 'exported'
-  return (
-    <ol className="stage-list">
-      {['Đọc tài liệu', 'Tổ chức nội dung', 'Kiểm tra bản nháp', 'Lưu vào vault'].map((label, index) => (
-        <li className={complete || index < current ? 'done' : index === current ? 'current' : ''} key={label}>
-          <span>{complete || index < current ? '✓' : index + 1}</span><div><strong>{label}</strong><small>{complete || index < current ? 'Hoàn tất' : index === current ? 'Đang ở bước này' : 'Chờ'}</small></div>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function ScanningPlaceholder() {
-  return <div className="scanning-placeholder"><span /><span /><span /><p>Nội dung trang sẽ xuất hiện khi OCR hoàn tất.</p></div>
-}
-
 function LoadingScreen() {
-  return <main className="center-screen"><span className="large-spinner" /><p>Đang mở bàn scan…</p></main>
+  return <main className="center-screen"><StatusLamp tone="active">Đang mở workstation</StatusLamp><p>Đang tải snapshot của tài liệu…</p></main>
 }
 
 function FatalScreen({ message }) {
-  return <main className="center-screen"><h1>Không thể mở tài liệu</h1><p>{message}</p><Link className="primary-button" to="/">Quay lại upload</Link></main>
+  return <main className="center-screen"><h1>Không thể mở tài liệu</h1><p>{message}</p><Link className="machine-button primary" to="/">Quay lại upload</Link></main>
 }

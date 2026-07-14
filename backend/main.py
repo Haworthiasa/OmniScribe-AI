@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from pathlib import Path
 import uuid
 
@@ -23,6 +24,7 @@ ocr_service = GlmOcrService(settings)
 metadata_service = MetadataLlmService(settings)
 obsidian_exporter = ObsidianExporter(settings)
 background_tasks: set[asyncio.Task] = set()
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="OmniScribe AI", version="1.0.0")
 app.add_middleware(
@@ -205,6 +207,12 @@ async def process_job(job_id: str) -> None:
                     markdown=page.markdown,
                 )
             except Exception as error:
+                logger.exception(
+                    "OCR failed for job %s, page %s (%s)",
+                    job_id,
+                    page.number,
+                    page.filename,
+                )
                 page.status = PageStatus.ERROR
                 page.error = str(error)
                 await job_store.emit(
@@ -238,6 +246,7 @@ async def process_job(job_id: str) -> None:
             markdown=job.combined_markdown,
         )
     except Exception as error:
+        logger.error("Job %s failed: %s", job_id, error)
         job.status = JobStatus.ERROR
         job.error = str(error)
         await job_store.emit(job_id, "job.failed", error=str(error))
