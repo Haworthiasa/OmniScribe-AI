@@ -10,7 +10,7 @@ OmniScribe AI turns handwritten JPG/PNG pages into reviewed Markdown notes with 
 - OpenAI-compatible LLM metadata enrichment with validated JSON
 - Markdown review with GFM tables and KaTeX math
 - Explicit review before export
-- Atomic Obsidian note writes, all source images, and topic notes for Graph edges
+- Atomic Obsidian note writes, source images, topic/category notes, and a hybrid local vault graph
 - Safe demo mode that never writes to the configured real vault by default
 
 ## Quick start on Windows
@@ -36,6 +36,13 @@ Open `http://localhost:5173`. Demo mode is enabled in `.env.example`, so the com
 
 To use real APIs, set `DEMO_MODE=false`, add `Z_AI_API_KEY`, `LLM_API_KEY`, and an absolute `VAULT_PATH`. Never commit `backend/.env`.
 
+The graph indexes `OmniScribe` by default. Add comma-separated relative folders with `VAULT_GRAPH_ROOTS`; use `.` only if indexing the entire vault is intentional. Existing handwritten notes are never changed automatically. Preview or apply the category-link migration with:
+
+```powershell
+python backend/scripts/migrate_category_links.py --dry-run
+python backend/scripts/migrate_category_links.py --apply
+```
+
 ## Verification
 
 ```powershell
@@ -44,8 +51,8 @@ python -m unittest discover -s tests -v
 
 cd ..\frontend
 npm run lint
+npm test
 npm run build
 ```
 
 See [SETUP.md](SETUP.md) for configuration, [ARCHITECTURE.md](ARCHITECTURE.md) for the data flow, and [PLAN.md](PLAN.md) for scope.
-

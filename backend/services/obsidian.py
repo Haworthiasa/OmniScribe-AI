@@ -28,6 +28,20 @@ def _safe_topic(value: str) -> str:
     return cleaned[:100] or "Chủ đề"
 
 
+def ensure_category_note(root: Path, category: str) -> tuple[Path, str]:
+    category_name = _safe_topic(category or "Chưa phân loại")
+    category_path = root / "OmniScribe" / "Categories" / f"{category_name}.md"
+    category_path.parent.mkdir(parents=True, exist_ok=True)
+    if not category_path.exists():
+        frontmatter = yaml.safe_dump(
+            {"type": "category", "category": category},
+            allow_unicode=True,
+            sort_keys=False,
+        ).strip()
+        _atomic_write(category_path, f"---\n{frontmatter}\n---\n\n# {category_name}\n")
+    return category_path, category_name
+
+
 def _atomic_write(path: Path, content: str) -> None:
     temp_path = path.with_suffix(path.suffix + ".tmp")
     temp_path.write_text(content, encoding="utf-8")
@@ -49,8 +63,11 @@ class ObsidianExporter:
         inbox = root / "OmniScribe" / "Inbox"
         attachments = root / "OmniScribe" / "Attachments" / job_id
         topics_dir = root / "OmniScribe" / "Topics"
-        for directory in (inbox, attachments, topics_dir):
+        categories_dir = root / "OmniScribe" / "Categories"
+        for directory in (inbox, attachments, topics_dir, categories_dir):
             directory.mkdir(parents=True, exist_ok=True)
+
+        _, category_name = ensure_category_note(root, metadata.category)
 
         timestamp = datetime.now(timezone.utc)
         base_name = f"{timestamp:%Y-%m-%d}-{slugify(metadata.title)}"
@@ -91,6 +108,7 @@ class ObsidianExporter:
             f"# {metadata.title}\n\n> {metadata.summary}\n\n"
             f"## Nội dung\n\n{markdown.strip()}\n\n"
             f"## Chủ đề liên quan\n\n{topics_text}\n\n"
+            f"## Danh mục\n\n[[OmniScribe/Categories/{category_name}|{metadata.category}]]\n\n"
             f"## Nguồn\n\n{sources_text}\n"
         )
         _atomic_write(note_path, note_content)

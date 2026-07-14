@@ -32,7 +32,7 @@ class DocumentMetadata(BaseModel):
     summary: str = Field(default="", max_length=1000)
     document_type: str = Field(default="notes", max_length=40)
     category: str = Field(default="uncategorized", max_length=80)
-    tags: list[str] = Field(default_factory=list, max_length=8)
+    tags: list[str] = Field(default_factory=list, max_length=3)
     topics: list[str] = Field(default_factory=list, max_length=6)
 
     @field_validator("title", "summary", "document_type", "category")
@@ -40,20 +40,31 @@ class DocumentMetadata(BaseModel):
     def strip_text(cls, value: str) -> str:
         return value.strip()
 
-    @field_validator("tags", "topics")
+    @field_validator("tags", "topics", mode="before")
     @classmethod
-    def clean_lists(cls, values: list[str]) -> list[str]:
+    def clean_lists(cls, values: list[str], info) -> list[str]:
         cleaned: list[str] = []
-        for value in values:
+        limit = 3 if info.field_name == "tags" else 6
+        source = [values] if isinstance(values, str) else (values or [])
+        for value in source:
             item = str(value).strip().lstrip("#")
             if item and item.casefold() not in {existing.casefold() for existing in cleaned}:
                 cleaned.append(item[:80])
+            if len(cleaned) == limit:
+                break
         return cleaned
 
 
 class ExportRequest(BaseModel):
     markdown: str = Field(min_length=1)
     metadata: DocumentMetadata
+
+
+class GraphPreviewRequest(BaseModel):
+    markdown: str
+    metadata: DocumentMetadata
+    depth: int = Field(default=1, ge=1, le=2)
+    include_tags: bool = True
 
 
 @dataclass

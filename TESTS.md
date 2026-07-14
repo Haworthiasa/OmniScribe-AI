@@ -291,36 +291,78 @@ Kết quả mong đợi:
 Kết quả mong đợi:
 
 - Giá trị không bị mất khi chuyển qua lại giữa các chế độ xem.
-- Graph cập nhật từ dữ liệu vừa sửa.
-- Nút trung tâm là title; topics và tags là các node ngoài.
-- Mỗi node ngoài chỉ nối trực tiếp với title.
+- Graph gửi lại request sau 400 ms và cập nhật từ Markdown/metadata vừa sửa.
+- Category được ghim ở trung tâm; document hiện tại, note liên quan, topics và tags nằm xung quanh.
+- Request cũ bị hủy và response cũ không được ghi đè graph mới.
+- Tags được giới hạn ở ba giá trị chủ đạo đầu tiên.
 
-### TC-21 — Graph loại trùng không phân biệt hoa thường
+### TC-21 — Hybrid local graph và depth
 
-- [ ] Nhập topics: `Vật lý, vật LÝ, Năng lượng`.
-- [ ] Nhập tags: `ôn tập, ÔN TẬP, Vật lý`.
+- [ ] Tạo note A liên kết trực tiếp tới note B; note B liên kết tới note C trong một graph root được phép.
+- [ ] Mở graph ở depth 1, sau đó chuyển sang depth 2.
+- [ ] Tắt rồi bật `Hiện tags`, sau đó tải lại trang.
 
 Kết quả mong đợi:
 
-- Graph chỉ có một node `Vật lý` và một node `ôn tập`.
-- Tag trùng với topic không tạo thêm node thứ hai.
-- Tải lại cùng dữ liệu cho ra cùng vị trí node.
+- Depth 1 có A/B và các note cùng category; depth 2 bổ sung C.
+- Node trùng được loại bỏ; kích thước node tăng theo degree nhưng không vượt giới hạn.
+- Tùy chọn depth và tags được khôi phục từ localStorage.
 
-### TC-22 — Graph rỗng
+### TC-22 — Tương tác graph
+
+- [ ] Bấm `Mở graph`, rồi kéo một node sang vị trí khác.
+- [ ] Kéo vùng nền để pan toàn graph.
+- [ ] Zoom bằng con lăn và bằng nút `+`/`−`.
+- [ ] Hover node để kiểm tra neighborhood highlight; click node để mở detail.
+- [ ] Dùng `Tab`, `Enter`, `Escape` để mở/chọn/đóng dialog.
+- [ ] Bấm `Đặt lại`.
+
+Kết quả mong đợi:
+
+- Node đi theo con trỏ và cạnh nối cập nhật tức thời.
+- Pan và zoom không làm mất node hoặc tạo thanh cuộn ngang toàn trang.
+- Hover làm mờ node không liên quan; detail hiển thị degree, trạng thái, path tương đối và link Obsidian khi có.
+- Escape đóng dialog và focus trở lại nút `Mở graph`.
+- Đặt lại chạy lại force layout và mức zoom 100%; category vẫn được ghim ở tâm.
+- Inspector preview không cho drag; mobile dialog chiếm toàn màn hình; resize không tạo overflow ngang toàn trang.
+
+### TC-23 — Graph rỗng
 
 - [ ] Mở route upload hoặc quan sát graph trước khi metadata sẵn sàng.
 
 Kết quả mong đợi:
 
 - Graph không tạo node giả.
-- Empty state giải thích graph sẽ dùng title, topics và tags.
+- Empty state giải thích graph sẽ dùng category làm trọng tâm, cùng title, topics và tối đa ba tags.
 - Screen reader có fallback dạng text/list khi graph có dữ liệu.
+
+### TC-24 — Vault graph fallback
+
+- [ ] Cấu hình `VAULT_GRAPH_ROOTS` tới thư mục không tồn tại hoặc tạm thời làm vault không đọc được.
+
+Kết quả mong đợi:
+
+- Review Markdown/metadata vẫn hoạt động.
+- Graph metadata cục bộ vẫn hiển thị cùng cảnh báo cụ thể.
+- Response không chứa absolute vault path hay nội dung note.
+
+### TC-25 — Migration category links
+
+- [ ] Chạy `python backend/scripts/migrate_category_links.py --dry-run` trên vault thử nghiệm.
+- [ ] Xác nhận không có file đổi rồi chạy lại với `--apply`.
+- [ ] Chạy `--apply` lần thứ hai.
+
+Kết quả mong đợi:
+
+- Chỉ note dưới `OmniScribe/Inbox` có `source: handwritten` được chọn.
+- Dry-run không ghi file; apply tạo category note/link và backup theo timestamp.
+- Category note có sẵn không bị ghi đè; lần apply thứ hai không nhân đôi section/link.
 
 ---
 
 ## 6. Chỉnh sửa và lưu Obsidian
 
-### TC-23 — Chỉnh sửa Markdown
+### TC-26 — Chỉnh sửa Markdown
 
 - [ ] Chờ tài liệu ready rồi mở `Chỉnh sửa`.
 - [ ] Thêm một heading hoặc đoạn văn.
@@ -332,7 +374,7 @@ Kết quả mong đợi:
 - Nội dung mới xuất hiện trong preview.
 - Quay lại chỉnh sửa vẫn giữ nội dung vừa nhập.
 
-### TC-24 — Không cho lưu khi title rỗng
+### TC-27 — Không cho lưu khi title rỗng
 
 - [ ] Xóa toàn bộ title.
 
@@ -341,7 +383,7 @@ Kết quả mong đợi:
 - Nút `Lưu vào Obsidian` bị vô hiệu hóa.
 - Nhập lại title sẽ bật nút lưu.
 
-### TC-25 — Export thành công trong demo mode
+### TC-28 — Export thành công trong demo mode
 
 - [ ] Giữ `DEMO_MODE=true` và `DEMO_ALLOW_VAULT_WRITE=false`.
 - [ ] Bấm `Lưu vào Obsidian`.
@@ -353,8 +395,9 @@ Kết quả mong đợi:
 - Note chứa Markdown đã chỉnh sửa và metadata cuối.
 - Ảnh nguồn của mọi trang được lưu cùng output.
 - Topic notes/link được tạo theo exporter hiện tại.
+- Category note được tạo nếu thiếu, note chính có section `Danh mục`, và category note có sẵn không bị ghi đè.
 
-### TC-26 — Export thất bại (nâng cao)
+### TC-29 — Export thất bại (nâng cao)
 
 Điều kiện: dùng một vault thử nghiệm không có quyền ghi hoặc mock endpoint export trả lỗi. Không dùng vault thật.
 
@@ -367,7 +410,7 @@ Kết quả mong đợi:
 - Job trở lại trạng thái ready để có thể thử lưu lại.
 - Không hiển thị thành công giả hoặc đường dẫn note giả.
 
-### TC-27 — Export lặp lại
+### TC-30 — Export lặp lại
 
 - [ ] Sau khi export thành công, thử mở lại deep link và kiểm tra khu vực Obsidian.
 
@@ -380,7 +423,7 @@ Kết quả mong đợi:
 
 ## 7. Reload, deep link và mất kết nối
 
-### TC-28 — Reload job đang xử lý
+### TC-31 — Reload job đang xử lý
 
 Kịch bản này dễ kiểm tra với API thật hoặc job nhiều trang.
 
@@ -392,7 +435,7 @@ Kết quả mong đợi:
 - SSE tiếp tục từ event ID gần nhất, không nhân đôi nội dung trang.
 - Progress không lùi về 0 nếu backend đã xử lý trang.
 
-### TC-29 — Reload job ready hoặc exported
+### TC-32 — Reload job ready hoặc exported
 
 - [ ] Tải lại một job đã ready.
 - [ ] Tải lại một job đã export.
@@ -403,7 +446,7 @@ Kết quả mong đợi:
 - Metadata và graph được dựng lại đúng.
 - Job exported khôi phục đúng đường dẫn note và trạng thái đã lưu.
 
-### TC-30 — Deep link không tồn tại
+### TC-33 — Deep link không tồn tại
 
 - [ ] Mở `/jobs/id-khong-ton-tai`.
 
@@ -413,7 +456,7 @@ Kết quả mong đợi:
 - Có thông báo dễ hiểu và nút quay về upload.
 - Không để màn hình loading vô hạn.
 
-### TC-31 — SSE mất kết nối tạm thời (nâng cao)
+### TC-34 — SSE mất kết nối tạm thời (nâng cao)
 
 - [ ] Trong khi job đang chạy, tạm ngắt mạng hoặc dừng backend.
 - [ ] Khôi phục kết nối.
@@ -430,7 +473,7 @@ Kết quả mong đợi:
 
 Không cần công cụ tự động; thay đổi kích thước cửa sổ trình duyệt bằng tay.
 
-### TC-32 — Desktop từ 1200px
+### TC-35 — Desktop từ 1200px
 
 - [ ] Kiểm tra ở cửa sổ rộng từ 1200px trở lên.
 
@@ -441,7 +484,7 @@ Kết quả mong đợi:
 - Header không hiển thị dữ liệu giả.
 - Không có thanh cuộn ngang toàn trang.
 
-### TC-33 — Tablet từ 800px đến 1199px
+### TC-36 — Tablet từ 800px đến 1199px
 
 - [ ] Thu cửa sổ vào khoảng 1024px.
 - [ ] Bấm nút `Metadata`.
@@ -454,7 +497,7 @@ Kết quả mong đợi:
 - Có thể mở và đóng drawer bằng bàn phím.
 - Không có thanh cuộn ngang toàn trang.
 
-### TC-34 — Mobile dưới 800px
+### TC-37 — Mobile dưới 800px
 
 - [ ] Thu cửa sổ xuống khoảng 390px.
 
@@ -466,7 +509,7 @@ Kết quả mong đợi:
 - Không có vùng cuộn dọc lồng nhau hoặc chiều cao viewport cố định.
 - Controls vẫn đủ lớn để chạm.
 
-### TC-35 — Điều hướng bằng bàn phím
+### TC-38 — Điều hướng bằng bàn phím
 
 - [ ] Không dùng chuột; dùng `Tab`, `Shift+Tab`, `Enter` và `Space`.
 - [ ] Chọn ảnh, sắp xếp bằng nút, chuyển view, chọn page, sửa metadata và mở drawer.
@@ -478,7 +521,7 @@ Kết quả mong đợi:
 - Thứ tự focus hợp lý theo thứ tự đọc.
 - Control disabled không nhận thao tác.
 
-### TC-36 — Trạng thái không phụ thuộc màu
+### TC-39 — Trạng thái không phụ thuộc màu
 
 - [ ] Kiểm tra backend, page queue, pipeline, lỗi và export success.
 
@@ -487,7 +530,7 @@ Kết quả mong đợi:
 - Mỗi trạng thái đều có chữ và/hoặc icon ngoài màu sắc.
 - Không cần phân biệt đỏ, xanh hoặc amber mới hiểu được trạng thái.
 
-### TC-37 — Reduced motion
+### TC-40 — Reduced motion
 
 - [ ] Bật `Reduce motion` trong hệ điều hành hoặc giả lập `prefers-reduced-motion: reduce` trong DevTools.
 - [ ] Chạy một job OCR.
@@ -498,7 +541,7 @@ Kết quả mong đợi:
 - Drawer và progress gần như chuyển trạng thái tức thì.
 - Trạng thái xử lý vẫn thể hiện bằng chữ, lamp và số progress.
 
-### TC-38 — Nội dung dài
+### TC-41 — Nội dung dài
 
 - [ ] Dùng filename dài, title dài, nhiều tags/topics và Markdown có bảng rộng.
 

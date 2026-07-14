@@ -190,15 +190,15 @@ Rendered preview uses the same Be Vietnam Pro and IBM Plex Mono families as the 
 
 ## Metadata Inspector
 
-The inspector uses only the current schema: title, summary, document type, category, tags, and topics. Before `document.ready`, fields are disabled and visibly pending. After readiness they are ordinary editable values owned by the user.
+The inspector uses only the current schema: title, summary, document type, category, tags, and topics. Tags are deduplicated in priority order and limited to the three most representative values. Before `document.ready`, fields are disabled and visibly pending. After readiness they are ordinary editable values owned by the user.
 
 Saving to Obsidian stays disabled until the document is ready and title is non-empty. Export success shows the real note path and open URI. Export failure stays actionable and leaves the document available for another attempt.
 
 ## Knowledge Graph
 
-The graph is derived locally. The title is the central node, topics are primary nodes, and tags are secondary nodes. Topics and tags are deduplicated without case sensitivity. Every outer node connects only to the title because current data does not prove relationships between topics or tags.
+The graph is derived locally. Category is the central node because it is the document's broadest organizing context. Title and topics are primary content nodes; up to three tags are secondary nodes. Topics and tags are deduplicated without case sensitivity. Every outer node connects only to category because current data does not prove relationships between the outer nodes.
 
-SVG layout is deterministic and uses no additional graph library. Include an accessible text list with the same title, topics, and tags. Before metadata is ready, explain which fields will produce the graph; do not invent vault contents or read a vault directly.
+SVG layout is deterministic and uses no additional graph library. Users can drag individual nodes, drag the background to pan, zoom with wheel or controls, reset the layout, and move a focused node with arrow keys. The SVG scales to its inspector width while its view transform preserves interaction at every breakpoint. Include an accessible text list with category, title, topics, and tags. Before metadata is ready, explain which fields will produce the graph; do not invent vault contents or read a vault directly.
 
 ## Responsive Behavior
 

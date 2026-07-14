@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import Inspector from './Inspector'
 import MarkdownRenderer from './MarkdownRenderer'
 import WorkbenchShell, { Panel, Pipeline, StatusLamp } from './WorkbenchShell'
-import { EMPTY_METADATA, pageAnchor, resolveDocument, splitDocumentByPage } from '../lib/workbench'
+import { EMPTY_METADATA, normalizeMetadata, pageAnchor, resolveDocument, splitDocumentByPage } from '../lib/workbench'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
@@ -42,7 +42,7 @@ export default function Stream() {
   function applySnapshot(snapshot) {
     setJob(snapshot)
     statusRef.current = snapshot.status
-    if (snapshot.metadata) setMetadata(snapshot.metadata)
+    if (snapshot.metadata) setMetadata(normalizeMetadata(snapshot.metadata))
     if (snapshot.combined_markdown) setMarkdown(snapshot.combined_markdown)
     if (snapshot.export_result) setExportResult(snapshot.export_result)
     if (snapshot.error) setError(snapshot.error)
@@ -78,7 +78,7 @@ export default function Stream() {
           next.status = 'ready'
           next.metadata = event.metadata
           next.combined_markdown = event.markdown
-          setMetadata(event.metadata)
+          setMetadata(normalizeMetadata(event.metadata))
           setMarkdown(event.markdown)
         }
         if (event.type === 'job.failed') {
@@ -153,7 +153,7 @@ export default function Stream() {
   }
 
   function updateMetadata(field, value) {
-    setMetadata((current) => ({ ...current, [field]: value }))
+    setMetadata((current) => normalizeMetadata({ ...current, [field]: value }))
   }
 
   async function saveToObsidian() {
@@ -251,7 +251,7 @@ export default function Stream() {
       totalPages={job.total_pages}
       left={left}
       center={center}
-      right={<Inspector metadata={metadata} ready={ready} onChange={updateMetadata} onSave={saveToObsidian} saving={exporting} exportResult={exportResult} />}
+      right={<Inspector jobId={jobId} markdown={markdown} metadata={metadata} ready={ready} onChange={updateMetadata} onSave={saveToObsidian} saving={exporting} exportResult={exportResult} />}
       inspectorOpen={inspectorOpen}
       onInspectorClose={() => setInspectorOpen(false)}
     />

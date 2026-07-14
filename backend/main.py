@@ -13,16 +13,18 @@ from fastapi.responses import Response, StreamingResponse
 
 from config import Settings
 from job_store import job_store
-from models import ExportRequest, Job, JobStatus, Page, PageStatus
+from models import ExportRequest, GraphPreviewRequest, Job, JobStatus, Page, PageStatus
 from services.glm_ocr import GlmOcrService
 from services.metadata_llm import MetadataLlmService
 from services.obsidian import ObsidianExporter
+from services.vault_graph import VaultGraphService
 
 
 settings = Settings.from_env()
 ocr_service = GlmOcrService(settings)
 metadata_service = MetadataLlmService(settings)
 obsidian_exporter = ObsidianExporter(settings)
+vault_graph_service = VaultGraphService(settings)
 background_tasks: set[asyncio.Task] = set()
 logger = logging.getLogger("uvicorn.error")
 
@@ -182,6 +184,25 @@ async def export_job(job_id: str, request: ExportRequest) -> dict:
         job.status = JobStatus.READY
         await job_store.emit(job_id, "export.failed", error=str(error))
         raise HTTPException(status_code=500, detail=f"Không thể ghi vào vault: {error}") from error
+
+
+@app.post("/api/jobs/{job_id}/graph-preview")
+async def graph_preview(job_id: str, request: GraphPreviewRequest) -> dict:
+    job = await job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên xử lý.")
+    if job.status not in {JobStatus.READY, JobStatus.EXPORTED}:
+        raise HTTPException(status_code=409, detail="Tài liệu chưa sẵn sàng để dựng graph.")
+    current_path = job.export_result.get("note_path") if job.export_result else None
+    return await asyncio.to_thread(
+        vault_graph_service.build,
+        job.id,
+        request.markdown,
+        request.metadata,
+        request.depth,
+        request.include_tags,
+        current_path,
+    )
 
 
 async def process_job(job_id: str) -> None:

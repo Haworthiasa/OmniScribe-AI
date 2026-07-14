@@ -11,7 +11,7 @@ import httpx
 import main
 from config import Settings
 from job_store import JobStore
-from models import Job, Page
+from models import DocumentMetadata, Job, Page
 from services.glm_ocr import GlmOcrService
 from services.metadata_llm import MetadataLlmService
 from services.obsidian import ObsidianExporter, slugify
@@ -58,6 +58,13 @@ class CoreTests(unittest.TestCase):
             GlmOcrService(full_url_settings).endpoint_url,
             "https://api.z.ai/api/paas/v4/layout_parsing",
         )
+
+    def test_metadata_keeps_only_three_primary_tags(self):
+        metadata = DocumentMetadata(
+            title="Demo",
+            tags=["OCR", "ocr", "ghi-chu", "hoc-tap", "du-thua"],
+        )
+        self.assertEqual(metadata.tags, ["OCR", "ghi-chu", "hoc-tap"])
 
 
 class JobStoreTests(unittest.IsolatedAsyncioTestCase):
@@ -123,6 +130,7 @@ class ApiFlowTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(note_path.exists())
                     note_text = note_path.read_text(encoding="utf-8")
                     self.assertIn("[[OmniScribe/Topics/", note_text)
+                    self.assertIn("[[OmniScribe/Categories/", note_text)
                     self.assertIn("page-01.png", note_text)
             finally:
                 main.ocr_service = original_ocr_service

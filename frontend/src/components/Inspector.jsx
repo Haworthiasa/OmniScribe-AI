@@ -1,5 +1,10 @@
-import { buildKnowledgeGraph, EMPTY_METADATA } from '../lib/workbench'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { buildMetadataGraph } from '../lib/graphModel'
+import { EMPTY_METADATA, limitPrimaryTags } from '../lib/workbench'
 import { Panel } from './WorkbenchShell'
+
+const GraphPreview = lazy(() => import('./graph/GraphPreview'))
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 function listValue(values) {
   return Array.isArray(values) ? values.join(', ') : ''
@@ -9,50 +14,92 @@ function parseList(value) {
   return value.split(',').map((item) => item.trim()).filter(Boolean)
 }
 
-export function KnowledgeGraph({ metadata, ready }) {
-  const graph = buildKnowledgeGraph(ready ? metadata : {})
+function preference(key, fallback) {
+  try {
+    const value = localStorage.getItem(key)
+    return value === null ? fallback : JSON.parse(value)
+  } catch {
+    return fallback
+  }
+}
+
+export function KnowledgeGraph({ jobId, markdown, metadata, ready }) {
+  const [depth, setDepthState] = useState(() => preference('omniscribe.graph.depth', 1))
+  const [includeTags, setIncludeTagsState] = useState(() => preference('omniscribe.graph.tags', true))
+  const [graph, setGraph] = useState(() => buildMetadataGraph(ready ? metadata : {}))
+  const [loading, setLoading] = useState(false)
+  const requestId = useRef(0)
+
+  function setDepth(value) {
+    setDepthState(value)
+    localStorage.setItem('omniscribe.graph.depth', JSON.stringify(value))
+  }
+
+  function setIncludeTags(value) {
+    setIncludeTagsState(value)
+    localStorage.setItem('omniscribe.graph.tags', JSON.stringify(value))
+  }
+
+  useEffect(() => {
+    const fallback = buildMetadataGraph(ready ? metadata : {}, includeTags)
+    if (!ready || !jobId) {
+      setGraph(fallback)
+      return undefined
+    }
+    const controller = new AbortController()
+    const currentRequest = ++requestId.current
+    const timeout = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const response = await fetch(`${API_BASE}/api/jobs/${jobId}/graph-preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({ markdown, metadata, depth, include_tags: includeTags }),
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(result.detail || 'Không thể đọc graph trong vault.')
+        if (currentRequest === requestId.current) setGraph(result)
+      } catch (error) {
+        if (error.name !== 'AbortError' && currentRequest === requestId.current) {
+          setGraph({ ...fallback, vault_available: false, warnings: [error.message] })
+        }
+      } finally {
+        if (currentRequest === requestId.current) setLoading(false)
+      }
+    }, 400)
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [depth, includeTags, jobId, markdown, metadata, ready])
+
   if (!graph.nodes.length) {
     return (
       <div className="graph-empty">
         <span aria-hidden="true">◇—◇</span>
         <strong>Chưa có dữ liệu liên kết</strong>
-        <p>Graph sẽ được dựng từ tiêu đề, chủ đề và tags sau khi tài liệu sẵn sàng.</p>
+        <p>Graph sẽ lấy danh mục làm trọng tâm, rồi kết nối tài liệu với notes, chủ đề và tối đa 3 tags.</p>
       </div>
     )
   }
-  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
   return (
-    <div className="graph-wrap">
-      <svg className="knowledge-graph" viewBox="0 0 320 220" role="img" aria-labelledby="graph-title graph-desc">
-        <title id="graph-title">Knowledge graph của tài liệu</title>
-        <desc id="graph-desc">Tiêu đề ở trung tâm, nối trực tiếp tới các chủ đề và tags.</desc>
-        <g className="graph-edges">
-          {graph.edges.map((edge) => {
-            const from = byId.get(edge.from)
-            const to = byId.get(edge.to)
-            return <line key={`${edge.from}-${edge.to}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />
-          })}
-        </g>
-        <g className="graph-nodes">
-          {graph.nodes.map((node) => (
-            <g className={`graph-node ${node.type}`} key={node.id} transform={`translate(${node.x} ${node.y})`}>
-              <circle r={node.type === 'title' ? 24 : node.type === 'topic' ? 14 : 10} />
-              <text y={node.type === 'title' ? 36 : 25} textAnchor="middle">{node.label.length > 18 ? `${node.label.slice(0, 16)}…` : node.label}</text>
-            </g>
-          ))}
-        </g>
-      </svg>
-      <div className="visually-hidden">
-        <p>Tiêu đề: {metadata.title}</p>
-        <p>Chủ đề: {graph.topics.join(', ') || 'Không có'}</p>
-        <p>Tags: {graph.tags.join(', ') || 'Không có'}</p>
-      </div>
-      <div className="graph-key" aria-hidden="true"><span>● Tiêu đề</span><span>● Chủ đề</span><span>● Tag</span></div>
-    </div>
+    <Suspense fallback={<div className="graph-loading" role="status">Đang nạp graph engine…</div>}>
+      <GraphPreview
+        graph={graph}
+        loading={loading}
+        depth={depth}
+        includeTags={includeTags}
+        onDepthChange={setDepth}
+        onTagsChange={setIncludeTags}
+      />
+    </Suspense>
   )
 }
 
 export default function Inspector({
+  jobId,
+  markdown = '',
   metadata = EMPTY_METADATA,
   ready = false,
   onChange = () => {},
@@ -71,13 +118,13 @@ export default function Inspector({
             <label>Loại<input value={metadata.document_type} onChange={(event) => onChange('document_type', event.target.value)} /></label>
             <label>Danh mục<input value={metadata.category} onChange={(event) => onChange('category', event.target.value)} placeholder="Chưa phân loại" /></label>
           </div>
-          <label>Tags<input value={listValue(metadata.tags)} onChange={(event) => onChange('tags', parseList(event.target.value))} placeholder="ôn-tập, vật-lý" /></label>
+          <label>Tags<input value={listValue(metadata.tags)} onChange={(event) => onChange('tags', limitPrimaryTags(parseList(event.target.value)))} placeholder="ôn-tập, vật-lý, ghi-chú" /><small className="field-hint">Tối đa 3 tags chủ đạo.</small></label>
           <label>Chủ đề<input value={listValue(metadata.topics)} onChange={(event) => onChange('topics', parseList(event.target.value))} placeholder="Vật lý, Năng lượng" /></label>
         </fieldset>
       </Panel>
 
-      <Panel code="B2" title="Graph preview" note="Suy ra cục bộ" className="graph-panel">
-        <KnowledgeGraph metadata={metadata} ready={ready} />
+      <Panel code="B2" title="Graph preview" note="Local graph" className="graph-panel">
+        <KnowledgeGraph jobId={jobId} markdown={markdown} metadata={metadata} ready={ready} />
       </Panel>
 
       <Panel code="B3" title="Obsidian" note={exportResult ? 'Đã lưu' : 'Xuất bản ghi'} className="save-panel">

@@ -68,6 +68,29 @@ function normalizeItems(items = []) {
     .sort((a, b) => a.localeCompare(b, 'vi', { sensitivity: 'base' }))
 }
 
+export function limitPrimaryTags(items = []) {
+  const seen = new Set()
+  const tags = []
+  for (const value of items) {
+    const item = String(value).trim().replace(/^#+/, '')
+    const key = item.toLocaleLowerCase('vi')
+    if (item && !seen.has(key)) {
+      seen.add(key)
+      tags.push(item)
+    }
+    if (tags.length === 3) break
+  }
+  return tags
+}
+
+export function normalizeMetadata(metadata = {}) {
+  return {
+    ...EMPTY_METADATA,
+    ...metadata,
+    tags: limitPrimaryTags(metadata.tags || []),
+  }
+}
+
 function ringPosition(index, count, radius, centerX, centerY, offset = -Math.PI / 2) {
   const angle = offset + (Math.PI * 2 * index) / Math.max(count, 1)
   return {
@@ -77,18 +100,21 @@ function ringPosition(index, count, radius, centerX, centerY, offset = -Math.PI 
 }
 
 export function buildKnowledgeGraph(metadata = {}) {
+  const category = String(metadata.category || '').trim()
   const title = String(metadata.title || '').trim()
   const topics = normalizeItems(metadata.topics)
   const topicKeys = new Set(topics.map((item) => item.toLocaleLowerCase('vi')))
-  const tags = normalizeItems(metadata.tags).filter((item) => !topicKeys.has(item.toLocaleLowerCase('vi')))
-  if (!title && !topics.length && !tags.length) return { nodes: [], edges: [], topics, tags }
+  const tags = normalizeItems(limitPrimaryTags(metadata.tags)).filter((item) => !topicKeys.has(item.toLocaleLowerCase('vi')))
+  if (!category && !title && !topics.length && !tags.length) return { nodes: [], edges: [], topics, tags }
 
-  const center = { id: 'title', type: 'title', label: title || 'Tài liệu', x: 160, y: 105 }
-  const topicNodes = topics.map((label, index) => ({
-    id: `topic-${index}`,
-    type: 'topic',
-    label,
-    ...ringPosition(index, topics.length, 56, center.x, center.y, -Math.PI / 2),
+  const center = { id: 'category', type: 'category', label: category || 'Chưa phân loại', x: 160, y: 105 }
+  const primaryItems = [
+    ...(title ? [{ id: 'title', type: 'title', label: title }] : []),
+    ...topics.map((label, index) => ({ id: `topic-${index}`, type: 'topic', label })),
+  ]
+  const primaryNodes = primaryItems.map((node, index) => ({
+    ...node,
+    ...ringPosition(index, primaryItems.length, 58, center.x, center.y, -Math.PI / 2),
   }))
   const tagNodes = tags.map((label, index) => ({
     id: `tag-${index}`,
@@ -96,7 +122,7 @@ export function buildKnowledgeGraph(metadata = {}) {
     label,
     ...ringPosition(index, tags.length, 82, center.x, center.y, 0),
   }))
-  const nodes = [center, ...topicNodes, ...tagNodes]
+  const nodes = [center, ...primaryNodes, ...tagNodes]
   const edges = nodes.slice(1).map((node) => ({ from: center.id, to: node.id }))
-  return { nodes, edges, topics, tags }
+  return { nodes, edges, category: center.label, title, topics, tags }
 }

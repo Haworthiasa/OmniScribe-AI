@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   buildKnowledgeGraph,
   buildLiveDocument,
+  limitPrimaryTags,
   resolveDocument,
   splitDocumentByPage,
 } from './workbench.js'
@@ -39,6 +40,7 @@ test('tách bản final thành section để deep link tới từng trang', () =
 test('graph loại trùng không phân biệt hoa thường và có layout deterministic', () => {
   const metadata = {
     title: 'Cơ học',
+    category: 'Học tập',
     topics: ['Vật lý', 'vật LÝ', 'Năng lượng'],
     tags: ['ôn tập', 'ÔN TẬP', 'Vật lý'],
   }
@@ -47,6 +49,12 @@ test('graph loại trùng không phân biệt hoa thường và có layout deter
   assert.deepEqual(first, second)
   assert.deepEqual(first.topics, ['Năng lượng', 'Vật lý'])
   assert.deepEqual(first.tags, ['ôn tập'])
-  assert.equal(first.edges.length, 3)
-  assert.ok(first.edges.every((edge) => edge.from === 'title'))
+  assert.equal(first.nodes[0].type, 'category')
+  assert.equal(first.nodes[0].label, 'Học tập')
+  assert.equal(first.edges.length, 4)
+  assert.ok(first.edges.every((edge) => edge.from === 'category'))
+})
+
+test('chỉ giữ ba tags chủ đạo theo thứ tự đầu vào', () => {
+  assert.deepEqual(limitPrimaryTags(['OCR', 'ocr', 'ghi-chú', 'học-tập', 'dư-thừa']), ['OCR', 'ghi-chú', 'học-tập'])
 })
