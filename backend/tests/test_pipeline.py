@@ -13,7 +13,7 @@ from config import Settings
 from job_store import JobStore
 from models import DocumentMetadata, Job, Page
 from services.glm_ocr import GlmOcrService
-from services.metadata_llm import METADATA_PROMPT, MetadataLlmService
+from services.metadata_llm import METADATA_PROMPT, MetadataLlmService, normalize_generated_metadata
 from services.obsidian import ObsidianExporter, slugify
 
 
@@ -28,6 +28,30 @@ class CoreTests(unittest.TestCase):
         self.assertIn("untrusted OCR content", METADATA_PROMPT)
         self.assertIn("never invent", METADATA_PROMPT)
         self.assertIn("Output JSON only", METADATA_PROMPT)
+        self.assertIn("at most 24 characters", METADATA_PROMPT)
+        self.assertIn("never fill a quota", METADATA_PROMPT)
+
+    def test_generated_metadata_drops_long_and_redundant_topics_and_tags(self):
+        payload = normalize_generated_metadata({
+            "title": "Electric dipole",
+            "category": "Physics",
+            "topics": ["Physics", "Classical electromagnetism", "Electric dipole theory", "Field energy"],
+            "tags": ["#electric-dipole", "torque", "a retrieval facet that is much too long"],
+        })
+
+        self.assertEqual(payload["topics"], ["Classical electromagnetism", "Field energy"])
+        self.assertEqual(payload["tags"], ["torque"])
+
+    def test_generated_metadata_prefers_first_distinct_values_without_truncating(self):
+        payload = normalize_generated_metadata({
+            "title": "Bài giảng",
+            "category": "Vật lý",
+            "topics": ["Điện trường", "điện-trường", "Mô men lực", "Năng lượng", "Từ trường"],
+            "tags": ["ôn tập", "ÔN-TẬP", "bài tập", "thí nghiệm"],
+        })
+
+        self.assertEqual(payload["topics"], ["Điện trường", "Mô men lực", "Năng lượng"])
+        self.assertEqual(payload["tags"], ["ôn tập", "bài tập", "thí nghiệm"])
 
     def test_detect_image_type_uses_magic_bytes(self):
         self.assertEqual(main.detect_image_type(PNG_BYTES), "image/png")

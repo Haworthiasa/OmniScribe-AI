@@ -292,7 +292,7 @@ Kết quả mong đợi:
 
 - Giá trị không bị mất khi chuyển qua lại giữa các chế độ xem.
 - Graph gửi lại request sau 400 ms và cập nhật từ Markdown/metadata vừa sửa.
-- Category được ghim ở trung tâm; document hiện tại, note liên quan, topics và tags nằm xung quanh.
+- Document hiện tại là tiêu điểm trực quan; category, note liên quan, topics và tags nằm trong cùng một force-simulation world ổn định theo node ID.
 - Request cũ bị hủy và response cũ không được ghi đè graph mới.
 - Tags được giới hạn ở ba giá trị chủ đạo đầu tiên.
 
@@ -311,6 +311,7 @@ Kết quả mong đợi:
 ### TC-22 — Tương tác graph
 
 - [ ] Bấm `Mở graph`, rồi kéo một node sang vị trí khác.
+- [ ] Chuyển `Local / Global`, đổi depth 1/2 và bật/tắt từng type filter.
 - [ ] Kéo vùng nền để pan toàn graph.
 - [ ] Zoom bằng con lăn và bằng nút `+`/`−`.
 - [ ] Hover node để kiểm tra neighborhood highlight; click node để mở detail.
@@ -322,9 +323,22 @@ Kết quả mong đợi:
 - Node đi theo con trỏ và cạnh nối cập nhật tức thời.
 - Pan và zoom không làm mất node hoặc tạo thanh cuộn ngang toàn trang.
 - Hover làm mờ node không liên quan; detail hiển thị degree, trạng thái, path tương đối và link Obsidian khi có.
+- Search không phân biệt hoa thường/dấu; filter Notes/Chủ đề/Tags ẩn cả node lẫn cạnh không còn đủ endpoint.
+- Preview B2 hiển thị toàn bộ depth-1 neighborhood quanh document, cho phép drag/pan và không chiếm wheel scroll của trang.
+- Compact và Explorer dùng cùng world coordinates; mở dialog, đổi mode, filter, search, resize hoặc selection không khởi tạo lại physics.
+- Local dùng BFS depth 1/2 quanh selected node; Global hiển thị toàn bộ graph response. Node bị filter ẩn vẫn ở trong simulation.
+- Current/category/selected/hovered luôn có label; zoom thấp/vừa/cao lần lượt mở thêm neighborhood, high-degree nodes và toàn bộ label phù hợp.
 - Escape đóng dialog và focus trở lại nút `Mở graph`.
-- Đặt lại chạy lại force layout và mức zoom 100%; category vẫn được ghim ở tâm.
-- Inspector preview không cho drag; mobile dialog chiếm toàn màn hình; resize không tạo overflow ngang toàn trang.
+- Vừa khung/Đặt lại chỉ đổi camera, không đổi force distance hoặc world positions.
+- Mobile dialog chiếm toàn màn hình; resize không tạo overflow ngang toàn trang.
+
+### TC-22A — Persistent physics contract
+
+- [x] Reconcile graph object mới với cùng node IDs giữ nguyên world coordinates.
+- [x] Node mới seed cạnh neighbor bằng góc hash ổn định; node bị xóa không để stale link.
+- [x] Manual ticks cho fixtures 8/30/80 node không để glyph hoặc label footprint chồng nhau sau settle.
+- [x] Drag làm direct neighbor dịch chuyển nhiều hơn unrelated node; release tiếp tục chuyển động rồi settle.
+- [x] Edge route cắt ở biên glyph và dùng quadratic path ổn định khi straight path gặp node/label khác.
 
 ### TC-23 — Graph rỗng
 
@@ -333,7 +347,7 @@ Kết quả mong đợi:
 Kết quả mong đợi:
 
 - Graph không tạo node giả.
-- Empty state giải thích graph sẽ dùng category làm trọng tâm, cùng title, topics và tối đa ba tags.
+- Empty state giải thích graph sẽ dùng document hiện tại làm tiêu điểm, cùng category, topics và tối đa ba tags.
 - Screen reader có fallback dạng text/list khi graph có dữ liệu.
 
 ### TC-24 — Vault graph fallback

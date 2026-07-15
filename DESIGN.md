@@ -196,9 +196,15 @@ Saving to Obsidian stays disabled until the document is ready and title is non-e
 
 ## Knowledge Graph
 
-The graph is derived locally. Category is the central node because it is the document's broadest organizing context. Title and topics are primary content nodes; up to three tags are secondary nodes. Topics and tags are deduplicated without case sensitivity. Every outer node connects only to category because current data does not prove relationships between the outer nodes.
+The graph is a hybrid of final metadata and links from explicitly configured local vault roots. The current document is the visual focus; category supplies its broad organizing context, while notes, topics, and up to three tags retain distinct semantic roles. Page images remain provenance in the source queue and never become knowledge nodes.
 
-SVG layout is deterministic and uses no additional graph library. Users can drag individual nodes, drag the background to pan, zoom with wheel or controls, reset the layout, and move a focused node with arrow keys. The SVG scales to its inspector width while its view transform preserves interaction at every breakpoint. Include an accessible text list with category, title, topics, and tags. Before metadata is ready, explain which fields will produce the graph; do not invent vault contents or read a vault directly.
+The graph uses one persistent force-simulation world per job. New graph responses are reconciled by node ID: existing nodes keep `x/y/vx/vy`, while new nodes seed beside a known neighbor at a stable hashed angle. The simulation remains alive across preview/Explorer mounting, search, filters, Local/Global changes, resize, zoom, and selection. Hidden nodes stay in physics so restoring a filter never rebuilds the layout.
+
+The compact B2 preview is the complete depth-1 neighborhood around the current document, with no six-node cap. Explorer projects either a depth-1/depth-2 Local graph around the selected node or the full Global response, while both surfaces render the same world coordinates. Node dragging applies local heat: direct neighbors respond through link forces while distant nodes are damped. Pan, zoom, fit, and reset change only the camera.
+
+Nodes are small Obsidian-like circular glyphs rather than cards: amber current document, cobalt category, paper/cobalt topic, green tag, and paper/graphite vault note; temporary nodes use a dashed outline. Degree changes glyph radius within a narrow bound. Labels use IBM Plex Mono with a paper halo and progressive zoom visibility. Circle collision protects glyphs, rectangular collision protects label footprints, and clipped quadratic edge routes avoid unrelated nodes/labels when a straight route would intersect them.
+
+Keyboard users move spatially between nodes with arrow keys and select with Enter or Space. The dialog closes with Escape and restores focus. Empty, unavailable-vault, filtered, and truncated states must remain explicit in both Vietnamese and English.
 
 ## Responsive Behavior
 
@@ -209,7 +215,7 @@ SVG layout is deterministic and uses no additional graph library. Users can drag
 
 ## Motion
 
-Use motion only to express processing. An amber registration line may scan the active Markdown section while GLM OCR is running. Progress width may transition for at most 300ms. Hover and drawer transitions last 120–180ms.
+Use motion to express processing and spatial continuity. An amber registration line may scan the active Markdown section while GLM OCR is running. Progress width may transition for at most 300ms. The graph simulation settles continuously, drag reheats only its neighborhood, and Local/Global opacity/camera transitions last about 160ms. Hover and drawer transitions last 120–180ms.
 
 `prefers-reduced-motion` removes the scan animation and makes transitions effectively immediate. Processing still has visible text and numeric progress.
 
@@ -246,7 +252,7 @@ Use motion only to express processing. An amber registration line may scan the a
 1. Shared `WorkbenchShell` owns the header, three-column grid, panel primitive, and responsive collapse for both routes.
 2. `page.ocr_completed` continues to carry complete Markdown for one page. The frontend composes the live document from `job.pages` in numeric order.
 3. `document.ready` remains the final source of Markdown and metadata.
-4. Graph data is frontend-derived from final metadata only.
+4. Graph fallback data is derived from final metadata; the graph-preview endpoint may enrich it only from configured safe vault roots without returning absolute paths or note contents.
 5. JPG/PNG, eight-file, 10 MB limits and partial-page errors remain unchanged.
 6. Verify empty upload, backend offline, demo, reorder/remove, processing, organizing, partial error, ready, edit, export success/failure, and reload states.
 7. Run `npm run design:lint`, `npm run test`, `npm run lint`, `npm run build`, and the backend suite before handoff.

@@ -88,6 +88,7 @@ export function KnowledgeGraph({ jobId, markdown, metadata, ready }) {
   return (
     <Suspense fallback={<div className="graph-loading" role="status">{t('graph.loading')}</div>}>
       <GraphPreview
+        jobId={jobId}
         graph={graph}
         loading={loading}
         depth={depth}

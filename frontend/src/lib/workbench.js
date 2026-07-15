@@ -31,7 +31,7 @@ export function pageDocumentSection(page) {
     return `> [!ERROR] Trang ${page.number} không thể OCR\n> ${page.error || 'Không có thông tin lỗi.'}`
   }
   if (page.status === 'processing') {
-    return `> [!PROCESSING] Trang ${page.number} đang được GLM OCR xử lý…`
+    return `Trang ${page.number} đang được GLM OCR xử lý…`
   }
   return `> [!WAITING] Trang ${page.number} đang chờ xử lý.`
 }

@@ -29,6 +29,7 @@ test('giữ placeholder, lỗi từng trang và thay bằng bản final khi read
   }
   const live = resolveDocument(job)
   assert.match(live, /Trang 2 đang được/)
+  assert.doesNotMatch(live, />\s*\[!PROCESSING\]/)
   assert.match(live, /Ảnh bị mờ/)
   assert.equal(resolveDocument({ ...job, status: 'ready' }), '# Bản cuối')
 })
